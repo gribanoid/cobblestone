@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cobblestone</title>
+  <style>
+/* ─── Themes ─────────────────────────────────────────────────────────────── */
+:root {
+  --bg:        #1e1e2e;
+  --surface:   #181825;
+  --surface2:  #313244;
+  --overlay:   #45475a;
+  --accent:    #cba6f7;
+  --accent2:   #89b4fa;
+  --green:     #a6e3a1;
+  --red:       #f38ba8;
+  --yellow:    #f9e2af;
+  --peach:     #fab387;
+  --text:      #cdd6f4;
+  --subtext:   #bac2de;
+  --muted:     #6c7086;
+  --border:    #313244;
+  --sidebar-w: 280px;
+}
+[data-theme="light"] {
+  --bg:       #eff1f5;  --surface:  #e6e9ef;
+  --surface2: #dce0e8;  --overlay:  #bcc0cc;
+  --accent:   #8839ef;  --accent2:  #1e66f5;
+  --green:    #40a02b;  --red:      #d20f39;
+  --yellow:   #df8e1d;  --peach:    #fe640b;
+  --text:     #4c4f69;  --subtext:  #5c5f77;
+  --muted:    #9ca0b0;  --border:   #ccd0da;
+}
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0 }
+html, body { height: 100%; font-size: 15px }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg); color: var(--text);
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+button { cursor: pointer; border: none; outline: none; font: inherit }
+input, textarea { font: inherit; outline: none }
+::-webkit-scrollbar { width: 6px }
+::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px }
+
+/* ─── Layout ─────────────────────────────────────────────────────────────── */
+.app { display: flex; height: 100vh; overflow: hidden }
+
+/* ─── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w);
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 14px 10px; border-bottom: 1px solid var(--border);
+}
+.logo { font-weight: 700; font-size: 16px; color: var(--accent); letter-spacing: .3px }
+.search-wrap { padding: 10px 12px 6px }
+.search-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); padding: 7px 12px; font-size: 13px;
+  transition: border-color .15s;
+}
+.search-input:focus { border-color: var(--accent) }
+.search-input::placeholder { color: var(--muted) }
+.new-btn {
+  margin: 4px 12px 10px; background: var(--accent); color: var(--bg);
+  border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+  transition: opacity .15s; width: calc(100% - 24px);
+}
+.new-btn:hover { opacity: .85 }
+.note-list { flex: 1; overflow-y: auto; padding: 2px 0 }
+.note-item {
+  padding: 10px 14px; cursor: pointer;
+  border-left: 3px solid transparent; transition: background .1s;
+}
+.note-item:hover { background: var(--surface2) }
+.note-item.active { background: var(--surface2); border-left-color: var(--accent) }
+.note-item-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.note-item-meta { font-size: 11px; color: var(--muted); margin-top: 2px }
+.note-item-tags { margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap }
+.tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+}
+.empty-state { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 13px }
+
+/* ─── Content ────────────────────────────────────────────────────────────── */
+.content { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden }
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface); gap: 12px;
+}
+.note-title-input {
+  flex: 1; background: none; border: none;
+  color: var(--text); font-size: 16px; font-weight: 600; min-width: 0;
+}
+.note-title-input::placeholder { color: var(--muted) }
+.toolbar-actions { display: flex; gap: 8px; align-items: center }
+.tb-btn {
+  padding: 5px 14px; border-radius: 7px; font-size: 13px; font-weight: 500;
+  background: var(--surface2); color: var(--subtext); transition: background .15s;
+}
+.tb-btn:hover { background: var(--overlay); color: var(--text) }
+.tb-btn.primary { background: var(--accent); color: var(--bg) }
+.tb-btn.primary:hover { opacity: .85 }
+.tb-btn.danger { background: none; color: var(--red) }
+.tb-btn.danger:hover { background: var(--red); color: var(--bg) }
+.tb-btn.active { background: var(--accent2); color: var(--bg) }
+.edit-indicator { font-size: 11px; color: var(--muted); padding: 2px 8px; border-radius: 10px; background: var(--surface2) }
+.edit-indicator.unsaved { color: var(--peach) }
+.icon-btn { background: none; color: var(--muted); padding: 4px 8px; border-radius: 6px; font-size: 14px }
+.icon-btn:hover { background: var(--surface2); color: var(--text) }
+.editor-wrap { flex: 1; display: flex; min-height: 0 }
+.editor {
+  flex: 1; width: 100%; height: 100%; resize: none;
+  background: var(--bg); color: var(--text); border: none; padding: 24px 28px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 14px; line-height: 1.7;
+}
+.editor.hidden { display: none }
+.preview { flex: 1; overflow-y: auto; padding: 24px 40px; font-size: 15px; line-height: 1.8; max-width: 800px; margin: 0 auto; width: 100% }
+.preview.hidden { display: none }
+
+/* ─── Preview Typography ─────────────────────────────────────────────────── */
+.preview h1 { font-size: 2em; color: var(--yellow); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 0 0 16px }
+.preview h2 { font-size: 1.4em; color: var(--accent2); margin: 24px 0 12px }
+.preview h3 { font-size: 1.15em; color: var(--green); margin: 20px 0 10px }
+.preview p  { margin: 0 0 12px }
+.preview a  { color: var(--accent2); text-decoration: none }
+.preview a:hover { text-decoration: underline }
+.preview strong { font-weight: 700 }
+.preview em  { color: var(--subtext) }
+.preview del { color: var(--muted) }
+.preview hr  { border: none; border-top: 1px solid var(--border); margin: 24px 0 }
+.preview blockquote {
+  border-left: 3px solid var(--accent); padding: 6px 16px; margin: 12px 0;
+  color: var(--subtext); background: var(--surface); border-radius: 0 6px 6px 0;
+}
+.preview code {
+  font-family: 'JetBrains Mono', monospace; font-size: .85em;
+  padding: 2px 6px; border-radius: 4px; background: var(--surface2); color: var(--peach);
+}
+.preview pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0 }
+.preview pre code { background: none; color: var(--green); padding: 0; font-size: 13px }
+.preview ul, .preview ol { padding-left: 24px; margin: 8px 0 12px }
+.preview li { margin: 4px 0 }
+.preview .task-item { list-style: none; margin-left: -24px; padding-left: 4px }
+.preview .task-item input { margin-right: 8px; accent-color: var(--green) }
+.preview .task-item.done { color: var(--muted); text-decoration: line-through }
+.preview img { max-width: 100%; border-radius: 6px }
+
+/* ─── Welcome ────────────────────────────────────────────────────────────── */
+.welcome {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--muted); text-align: center; gap: 12px; padding: 40px;
+}
+.logo-big { font-size: 56px }
+.welcome h2 { font-size: 22px; color: var(--text) }
+.welcome p { font-size: 14px; max-width: 340px; line-height: 1.8 }
+
+/* ─── Error toast ────────────────────────────────────────────────────────── */
+.error-toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--red); color: var(--bg);
+  padding: 10px 18px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 600;
+}
+  </style>
+  <script>
+    // Restore theme from localStorage before first paint
+    (function() {
+      var t = localStorage.getItem('cb-theme') || 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body></body>
+</html>

@@ -1,0 +1,16 @@
+[package]
+name        = "cobblestone-core"
+description = "Cobblestone core — shared storage and note logic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow  = "1"
+chrono  = { version = "0.4", features = ["serde"] }
+dirs    = "5"
+serde   = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+filetime = "0.2"
