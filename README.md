@@ -35,6 +35,18 @@ cargo install --path crates/cli
 
 The binary is installed as **`cb`**.
 
+### Developer shortcuts
+
+From the repository root you can use `make` for the common local flows:
+
+```bash
+make desktop        # run the native Tauri desktop app
+make web            # run the browser UI
+make tui            # run the terminal UI
+make cli ARGS='ls'  # run any cb command
+make test           # run workspace + desktop tests
+```
+
 ### 2. Create your first note
 
 ```bash
@@ -152,6 +164,12 @@ xcode-select --install
 ```bash
 cd crates/desktop
 cargo tauri dev
+```
+
+Or from the repository root:
+
+```bash
+make desktop
 ```
 
 This starts trunk (hot-reload WASM server on port 1420) and opens the native window automatically. Changes to Leptos components reload instantly.

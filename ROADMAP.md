@@ -21,9 +21,15 @@ Items are roughly ordered by priority within each milestone.
 
 ## 🔧 v0.2 — Polish & Power User
 
-- [ ] **Desktop app launch** — fully functional Leptos UI with Tauri IPC wired up
+- [x] **Desktop app launch** — functional Leptos UI with Tauri IPC wired up
+- [x] **Desktop note CRUD** — list, open, create, edit, save, delete
+- [x] **Desktop backend search** — sidebar uses the shared storage search path
+- [x] **Desktop note metadata panel** — tags, size, modified date, links, backlinks
+- [x] **Delete confirmation in desktop** — destructive action asks before removing a note
+- [ ] **Workspace folder selection** — open an existing Markdown folder instead of only `~/.cobblestone`
+- [ ] **Nested file tree** — display folders and Markdown files hierarchically
 - [ ] **Wikilinks** — `[[Note Title]]` creates clickable cross-note links
-- [ ] **Backlinks panel** — see all notes that link to current note
+- [ ] **Backlinks panel polish** — open backlink targets and highlight matching lines
 - [ ] **Daily note** — `cb today` opens/creates a note for today's date
 - [ ] **Note templates** — `cb new --template meeting`
 - [ ] **Pinned notes** — appear at top of list
@@ -36,6 +42,7 @@ Items are roughly ordered by priority within each milestone.
 
 ## 🖥 v0.3 — Desktop App Full Feature
 
+- [ ] **Right information panel** — backlinks, tags, metadata, and outgoing links
 - [ ] **Native file watcher** — reload note list when files change on disk
 - [ ] **Graph view** — force-directed link graph between notes
 - [ ] **Split editor/preview** — side-by-side in desktop window
@@ -44,6 +51,23 @@ Items are roughly ordered by priority within each milestone.
 - [ ] **System tray** — quick access to create note from anywhere
 - [ ] **Native notifications** — remind to open daily note
 - [ ] **Custom CSS themes** — drop `~/.cobblestone/theme.css` to restyle
+
+---
+
+## 🧱 Architecture Blueprint
+
+Pulled forward from `cobblestone-arch`; these are the product constraints for the desktop app:
+
+- [ ] **Local folder as workspace** — notes are regular `.md` files that can be opened, moved, synced, or backed up outside the app
+- [ ] **File operations** — create, rename, move, delete notes and folders with confirmation for destructive actions
+- [ ] **External change detection** — update the UI when files change on disk
+- [ ] **Markdown-first editor** — syntax highlighting, preview, autosave, shortcuts, attachments, and frontmatter metadata
+- [ ] **Connected notes** — wikilinks, autocomplete, backlinks, broken-link detection, renamed-link handling, and unlinked mentions
+- [ ] **Search and navigation** — full-text search, quick switcher, filters by folder/tag/date/type, recent notes, and bookmarks
+- [ ] **Organization** — tags, favorites, daily notes, templates, and global tag list
+- [ ] **Knowledge graph** — global graph, local graph, filters, and open-from-node navigation
+- [ ] **Portability** — import existing Markdown folders, export notes/folders to HTML/PDF, and remain compatible with Git or folder sync tools
+- [ ] **Settings** — workspace path, shortcuts, theme, font size, templates, daily-note format, and search-index management
 
 ---
 
