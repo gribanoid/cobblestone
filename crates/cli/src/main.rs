@@ -3,6 +3,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod commands;
 mod interactive;
 mod list;
 mod web;
@@ -88,10 +89,10 @@ async fn main() -> Result<()> {
         Some(Command::Ls { path: Some(p) }) => {
             list::run_path(&store, &p)
         }
-        Some(Command::New   { title }) => storage::cmd_new(&store, &title),
-        Some(Command::Show  { name  }) => storage::cmd_show(&store, &name),
-        Some(Command::Edit  { name  }) => storage::cmd_edit(&store, &name),
-        Some(Command::Rm    { name  }) => storage::cmd_delete(&store, &name),
+        Some(Command::New   { title }) => commands::cmd_new(&store, &title),
+        Some(Command::Show  { name  }) => commands::cmd_show(&store, &name),
+        Some(Command::Edit  { name  }) => commands::cmd_edit(&store, &name),
+        Some(Command::Rm    { name  }) => commands::cmd_delete(&store, &name),
         Some(Command::Search{ query }) => list::search(&store, &query),
         Some(Command::Web   { port  }) => web::run(store, port).await,
     }

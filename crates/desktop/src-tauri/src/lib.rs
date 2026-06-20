@@ -14,9 +14,13 @@ pub fn run() {
         .manage(AppState { store })
         .invoke_handler(tauri::generate_handler![
             commands::notes::list_notes,
+            commands::notes::list_tree,
             commands::notes::get_note,
             commands::notes::save_note,
             commands::notes::create_note,
+            commands::notes::create_folder,
+            commands::notes::move_note,
+            commands::notes::move_folder,
             commands::notes::delete_note,
             commands::notes::search_notes,
             commands::graph::note_graph,

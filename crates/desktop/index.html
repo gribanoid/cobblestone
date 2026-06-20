@@ -23,6 +23,8 @@
   --border:    #2e2e2e;
   --sidebar-w: 260px;
   --right-panel-w: 240px;
+  --tree-indent: 14px;
+  --tree-guide: color-mix(in srgb, var(--muted) 40%, var(--border));
 }
 [data-theme="light"] {
   --bg:       #f8f8f7;  --surface:  #f0f0ee;
@@ -96,15 +98,88 @@ input, textarea { font: inherit; outline: none }
 }
 .search-input:focus { border-color: var(--accent) }
 .search-input::placeholder { color: var(--muted) }
-.new-btn {
-  margin: 4px 8px 6px; background: none; color: var(--subtext);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 5px 10px; font-size: 12.5px; font-weight: 500;
-  transition: background .1s, color .1s; width: calc(100% - 16px);
-  text-align: left;
+.sidebar-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 0 8px 6px;
 }
-.new-btn:hover { background: var(--surface2); color: var(--text) }
-.note-list { flex: 1; overflow-y: auto; padding: 2px 0 }
+.sidebar-toolbar {
+  display: flex; align-items: center; gap: 2px;
+}
+.icon-tool-btn {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  background: none; color: var(--subtext);
+  border: none; border-radius: 4px;
+  padding: 0; flex: 0 0 auto;
+  transition: background .1s, color .1s;
+}
+.icon-tool-btn:hover { background: var(--surface2); color: var(--text) }
+.icon-tool-btn svg {
+  width: 16px; height: 16px;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.note-list { flex: 1; overflow-y: auto; padding: 2px 0; min-height: 0 }
+.vault-tree { padding: 2px 0 8px; min-height: 48px }
+.note-list.drag-over,
+.vault-tree.drag-over {
+  background: color-mix(in srgb, var(--accent), transparent 92%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent), transparent 50%);
+}
+.tree-folder.drag-over,
+.tree-folder-wrap.drag-over > .tree-folder {
+  background: color-mix(in srgb, var(--accent), transparent 85%);
+  border-left-color: var(--accent);
+}
+.tree-note, .tree-folder { cursor: grab; touch-action: none; }
+.tree-note.dragging, .tree-folder.dragging { opacity: .45; cursor: grabbing; }
+.tree-children {
+  margin-left: var(--tree-indent);
+  padding-left: calc(var(--tree-indent) - 2px);
+  border-left: 1px solid var(--tree-guide);
+}
+.tree-folder, .tree-note {
+  position: relative;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  cursor: pointer; border-left: 2px solid transparent;
+  font-size: 12.5px; min-height: 28px;
+}
+.tree-children > .tree-note::before,
+.tree-children > .tree-folder-wrap > .tree-folder::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--tree-indent) + 2px);
+  top: 50%;
+  width: calc(var(--tree-indent) - 6px);
+  height: 1px;
+  background: var(--tree-guide);
+  pointer-events: none;
+}
+.tree-folder:hover, .tree-note:hover { background: var(--surface2) }
+.tree-note.active { background: var(--surface2); border-left-color: var(--accent) }
+.tree-chevron {
+  flex: 0 0 16px; width: 16px; text-align: center;
+  color: var(--muted); font-size: 10px;
+}
+.tree-spacer { flex: 0 0 16px; width: 16px }
+.tree-folder-icon {
+  flex: 0 0 14px; width: 14px; height: 11px; position: relative;
+  border: 1px solid var(--muted); border-radius: 1px 2px 2px 2px;
+  background: color-mix(in srgb, var(--accent2), transparent 75%);
+}
+.tree-folder-icon::before {
+  content: ""; position: absolute; left: -1px; top: -4px;
+  width: 7px; height: 4px; border: 1px solid var(--muted);
+  border-bottom: none; border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--accent2), transparent 60%);
+}
+.tree-folder-name, .tree-note-title {
+  flex: 1; min-width: 0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.tree-note-title { color: var(--text); font-weight: 500 }
+.tree-folder-name { color: var(--subtext); font-weight: 500 }
 .note-item {
   padding: 6px 10px; cursor: pointer;
   border-left: 2px solid transparent; transition: background .08s;
@@ -262,6 +337,13 @@ input, textarea { font: inherit; outline: none }
 .modal p { font-size: 13px; color: var(--subtext); margin-bottom: 20px; line-height: 1.6 }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end }
 .modal-actions .tb-btn { padding: 6px 16px }
+.modal-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); padding: 8px 10px; font-size: 13px;
+  margin-bottom: 16px;
+}
+.modal-input:focus { border-color: var(--accent) }
+.modal-input::placeholder { color: var(--muted) }
 
 /* ─── Error toast ────────────────────────────────────────────────────────── */
 .error-toast {
@@ -293,7 +375,23 @@ input, textarea { font: inherit; outline: none }
       <div class="search-wrap">
         <input id="search" type="text" class="search-input" placeholder="Search notes…" autocomplete="off" />
       </div>
-      <button id="new-btn" class="new-btn">+ New note</button>
+      <div class="sidebar-actions">
+        <div class="sidebar-toolbar">
+          <button id="new-btn" class="icon-tool-btn" type="button" title="New note" aria-label="New note">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3" y="2.5" width="10" height="11" rx="1"/>
+              <path d="M9 6.5l2.5 2.5M8 7.5l1 1"/>
+              <path d="M7.5 8l2-2"/>
+            </svg>
+          </button>
+          <button id="new-folder-btn" class="icon-tool-btn" type="button" title="New folder" aria-label="New folder">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 4.5h4l1.2 1.5H13.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1z"/>
+              <path d="M8 8.5v3M6.5 10h3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
       <div id="note-list" class="note-list"></div>
     </aside>
 
@@ -307,7 +405,7 @@ input, textarea { font: inherit; outline: none }
         </div>
         <h2>Cobblestone</h2>
         <p>Write anything. Store everything. Own it all.</p>
-        <span class="welcome-hint">Select a note or press "+ New note"</span>
+        <span class="welcome-hint">Use the toolbar icons to create notes and folders</span>
       </div>
 
       <!-- Editor / preview area (hidden until a note is open) -->
@@ -336,6 +434,32 @@ input, textarea { font: inherit; outline: none }
           <div class="modal-actions">
             <button id="cancel-delete-btn" class="tb-btn">Cancel</button>
             <button id="confirm-delete-btn" class="tb-btn danger">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- New folder modal -->
+      <div id="folder-modal" class="modal-backdrop" style="display:none">
+        <div class="modal">
+          <h3>New folder</h3>
+          <p id="folder-modal-hint">Root</p>
+          <input id="folder-name-input" type="text" class="modal-input" placeholder="Folder name" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="cancel-folder-btn" class="tb-btn">Cancel</button>
+            <button id="confirm-folder-btn" class="tb-btn primary">Create</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- New note modal -->
+      <div id="note-modal" class="modal-backdrop" style="display:none">
+        <div class="modal">
+          <h3>New note</h3>
+          <p id="note-modal-hint">Root</p>
+          <input id="note-title-input" type="text" class="modal-input" placeholder="Note title" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="cancel-note-btn" class="tb-btn">Cancel</button>
+            <button id="confirm-note-btn" class="tb-btn primary">Create</button>
           </div>
         </div>
       </div>

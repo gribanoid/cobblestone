@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -36,58 +35,156 @@ impl Store {
 
     pub fn list_notes(&self) -> Result<Vec<Note>> {
         let mut notes = Vec::new();
-        for entry in fs::read_dir(&self.root)
-            .with_context(|| format!("Cannot read storage directory: {}", self.root.display()))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().map(|e| e == "md").unwrap_or(false) {
-                match Note::from_path(&path) {
-                    Ok(note) => notes.push(note),
-                    Err(e) => {
-                        eprintln!("warning: skipping {}: {e}", path.display());
-                    }
-                }
-            }
-        }
+        collect_notes_recursive(&self.root, &self.root, &mut notes)?;
         notes.sort_by(|a, b| b.modified_raw.cmp(&a.modified_raw));
         Ok(notes)
     }
 
+    /// Hierarchical vault tree (folders + notes) for file-tree UIs.
+    pub fn list_tree(&self) -> Result<Vec<VaultNode>> {
+        read_tree_dir(&self.root, &self.root)
+    }
+
+    pub fn create_folder(&self, path: &str) -> Result<()> {
+        let path = normalize_folder_path(path)?;
+        let dir = self.root.join(&path);
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("Cannot create folder '{}'", path))
+    }
+
     pub fn read(&self, name: &str) -> Result<String> {
-        let slug = slugify(name);
-        bail_if_empty_slug(&slug, name)?;
-        let path = self.root.join(format!("{slug}.md"));
+        let id = resolve_note_id(name)?;
+        let path = self.root.join(format!("{id}.md"));
         fs::read_to_string(&path)
-            .with_context(|| format!("Note '{}' not found", slug))
+            .with_context(|| format!("Note '{id}' not found"))
     }
 
     pub fn write(&self, name: &str, content: &str) -> Result<()> {
-        let slug = slugify(name);
-        bail_if_empty_slug(&slug, name)?;
-        let path = self.root.join(format!("{slug}.md"));
+        let id = resolve_note_id(name)?;
+        let path = self.root.join(format!("{id}.md"));
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Cannot create parent directory for '{id}'"))?;
+        }
         fs::write(&path, content)
-            .with_context(|| format!("Cannot write note '{}'", slug))
+            .with_context(|| format!("Cannot write note '{id}'"))
     }
 
     pub fn delete(&self, name: &str) -> Result<()> {
-        let slug = slugify(name);
-        bail_if_empty_slug(&slug, name)?;
-        let path = self.root.join(format!("{slug}.md"));
+        let id = resolve_note_id(name)?;
+        let path = self.root.join(format!("{id}.md"));
         fs::remove_file(&path)
-            .with_context(|| format!("Note '{}' not found", slug))
+            .with_context(|| format!("Note '{id}' not found"))
+    }
+
+    /// Move a note into `dest_folder` (or vault root when `None`/empty).
+    /// Returns the new note id.
+    pub fn move_note(&self, from: &str, dest_folder: Option<&str>) -> Result<String> {
+        let from_id = resolve_note_id(from)?;
+        let from_path = self.root.join(format!("{from_id}.md"));
+        if !from_path.is_file() {
+            bail!("Note '{from_id}' not found");
+        }
+
+        let file_name = from_id
+            .rsplit('/')
+            .next()
+            .context("Invalid note id")?;
+        let new_id = match dest_folder {
+            Some(folder) if !folder.trim().is_empty() => {
+                let folder = normalize_folder_path(folder)?;
+                format!("{folder}/{file_name}")
+            }
+            _ => file_name.to_string(),
+        };
+
+        if from_id == new_id {
+            return Ok(new_id);
+        }
+        if self.exists(&new_id) {
+            bail!("Note '{new_id}' already exists");
+        }
+
+        let to_path = self.root.join(format!("{new_id}.md"));
+        if let Some(parent) = to_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Cannot create parent directory for '{new_id}'"))?;
+        }
+        fs::rename(&from_path, &to_path)
+            .with_context(|| format!("Cannot move '{from_id}' to '{new_id}'"))?;
+        Ok(new_id)
+    }
+
+    /// Move a folder into `dest_parent` (or vault root when `None`/empty).
+    /// Returns the new folder path.
+    pub fn move_folder(&self, from: &str, dest_parent: Option<&str>) -> Result<String> {
+        let from = normalize_folder_path(from)?;
+        let from_dir = self.root.join(&from);
+        if !from_dir.is_dir() {
+            bail!("Folder '{from}' not found");
+        }
+
+        let name = from
+            .rsplit('/')
+            .next()
+            .context("Invalid folder path")?;
+        let new_path = match dest_parent {
+            Some(parent) if !parent.trim().is_empty() => {
+                let parent = normalize_folder_path(parent)?;
+                if parent == from || parent.starts_with(&format!("{from}/")) {
+                    bail!("Cannot move folder into itself or a subfolder");
+                }
+                format!("{parent}/{name}")
+            }
+            _ => name.to_string(),
+        };
+
+        if from == new_path {
+            return Ok(new_path);
+        }
+
+        let to_dir = self.root.join(&new_path);
+        if to_dir.exists() {
+            bail!("Folder '{new_path}' already exists");
+        }
+
+        if let Some(parent) = to_dir.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Cannot create parent directory for '{new_path}'"))?;
+        }
+
+        fs::rename(&from_dir, &to_dir)
+            .with_context(|| format!("Cannot move folder '{from}' to '{new_path}'"))?;
+        Ok(new_path)
     }
 
     pub fn exists(&self, name: &str) -> bool {
-        let slug = slugify(name);
-        if slug.is_empty() { return false; }
-        self.root.join(format!("{slug}.md")).exists()
+        self.note_file_path(name)
+            .ok()
+            .is_some_and(|path| path.exists())
     }
 
-    /// Returns the on-disk path for `name` (name is slugified first).
+    /// Returns the on-disk path for `name` (relative note id).
     pub fn path_for(&self, name: &str) -> PathBuf {
-        let slug = slugify(name);
-        self.root.join(format!("{slug}.md"))
+        self.note_file_path(name).unwrap_or_else(|_| self.root.join(name))
+    }
+
+    /// Build a note id from an optional folder path and a human title.
+    pub fn note_id_from_title(&self, folder: Option<&str>, title: &str) -> Result<String> {
+        let file = slugify(title.trim());
+        bail_if_empty_slug(&file, title)?;
+        match folder {
+            Some(folder) if !folder.trim().is_empty() => {
+                let folder = normalize_folder_path(folder)?;
+                Ok(format!("{folder}/{file}"))
+            }
+            _ => Ok(file),
+        }
+    }
+
+    fn note_file_path(&self, name: &str) -> Result<PathBuf> {
+        let id = resolve_note_id(name)?;
+        Ok(self.root.join(format!("{id}.md")))
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<(Note, Vec<String>)>> {
@@ -96,9 +193,17 @@ impl Store {
         }
         let q = query.to_lowercase();
         let mut results = Vec::new();
+        let mut paths = Vec::new();
+        collect_md_paths_recursive(&self.root, &mut paths)?;
 
-        for note in self.list_notes()? {
-            let content = fs::read_to_string(&note.path).unwrap_or_default();
+        for path in paths {
+            let (note, content) = match Note::from_path_with_content(&self.root, &path) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    eprintln!("warning: skipping {}: {e}", path.display());
+                    continue;
+                }
+            };
             let matches: Vec<String> = content
                 .lines()
                 .filter(|l| l.to_lowercase().contains(&q))
@@ -113,8 +218,31 @@ impl Store {
                 results.push((note, matches));
             }
         }
+        results.sort_by(|a, b| b.0.modified_raw.cmp(&a.0.modified_raw));
         Ok(results)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Vault tree
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum VaultNode {
+    Folder {
+        name: String,
+        path: String,
+        children: Vec<VaultNode>,
+    },
+    Note {
+        slug: String,
+        title: String,
+        modified: String,
+        size: u64,
+        preview: String,
+        tags: Vec<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -135,23 +263,30 @@ pub struct Note {
 }
 
 impl Note {
-    pub fn from_path(path: &Path) -> Result<Self> {
+    pub fn from_path(root: &Path, path: &Path) -> Result<Self> {
+        let (note, _) = Self::from_path_with_content(root, path)?;
+        Ok(note)
+    }
+
+    /// Like `from_path` but also returns the raw file content.
+    fn from_path_with_content(root: &Path, path: &Path) -> Result<(Self, String)> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Cannot read {}", path.display()))?;
         let meta = fs::metadata(path)
             .with_context(|| format!("Cannot stat {}", path.display()))?;
-        let name = path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+        let name = relative_note_id(root, path)?;
 
         let title = content
             .lines()
             .find(|l| l.starts_with("# "))
             .map(|l| l.trim_start_matches("# ").trim().to_string())
             .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| name.clone());
+            .unwrap_or_else(|| {
+                name.rsplit('/')
+                    .next()
+                    .unwrap_or(&name)
+                    .to_string()
+            });
 
         let preview: String = content
             .lines()
@@ -165,24 +300,19 @@ impl Note {
 
         let tags = extract_tags(&content);
 
-        let modified_raw = meta
-            .modified()
-            .map(|t| {
-                t.duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            })
+        let sys_time = meta.modified().ok();
+        let modified_raw = sys_time
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
             .unwrap_or(0);
-
-        let modified = meta
-            .modified()
+        let modified = sys_time
             .map(|t| {
                 let dt: chrono::DateTime<Local> = t.into();
                 dt.format("%Y-%m-%d %H:%M").to_string()
             })
             .unwrap_or_default();
 
-        Ok(Self {
+        let note = Self {
             name,
             title,
             path: path.to_string_lossy().into_owned(),
@@ -191,70 +321,9 @@ impl Note {
             size: meta.len(),
             preview,
             tags,
-        })
+        };
+        Ok((note, content))
     }
-}
-
-// ---------------------------------------------------------------------------
-// CLI helpers
-// ---------------------------------------------------------------------------
-
-pub fn cmd_new(store: &Store, title: &str) -> Result<()> {
-    let title = title.trim();
-    if title.is_empty() {
-        bail!("Note title cannot be empty.");
-    }
-    let name = slugify(title);
-    if store.exists(&name) {
-        bail!("Note '{}' already exists. Use `cb edit {}` to edit it.", name, name);
-    }
-    let date    = Local::now().format("%Y-%m-%d").to_string();
-    let content = format!("# {title}\n\n*Created: {date}*\n\n");
-    store.write(&name, &content)?;
-
-    println!("Created: {}", store.path_for(&name).display());
-
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-    std::process::Command::new(&editor)
-        .arg(store.path_for(&name))
-        .status()
-        .with_context(|| format!("Failed to launch editor '{editor}'"))?;
-    Ok(())
-}
-
-pub fn cmd_show(store: &Store, name: &str) -> Result<()> {
-    let content = store.read(name)?;
-    render_to_terminal(&content);
-    Ok(())
-}
-
-pub fn cmd_edit(store: &Store, name: &str) -> Result<()> {
-    if !store.exists(name) {
-        bail!("Note '{}' does not exist. Use `cb new` to create it.", name);
-    }
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-    std::process::Command::new(&editor)
-        .arg(store.path_for(name))
-        .status()
-        .with_context(|| format!("Failed to launch editor '{editor}'"))?;
-    Ok(())
-}
-
-pub fn cmd_delete(store: &Store, name: &str) -> Result<()> {
-    if !store.exists(name) {
-        bail!("Note '{}' does not exist.", name);
-    }
-    print!("Delete '{name}'? [y/N] ");
-    io::stdout().flush()?;
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    if input.trim().eq_ignore_ascii_case("y") {
-        store.delete(name)?;
-        println!("Deleted.");
-    } else {
-        println!("Aborted.");
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -285,9 +354,12 @@ pub fn slugify(s: &str) -> String {
 ///
 /// A token qualifies as a tag when it:
 /// - starts with `#`
-/// - has at least one character after `#`
-/// - appears after a word boundary (not at the very start of a line preceded
-///   by nothing, which would be a Markdown heading)
+/// - has at least one alphanumeric character after `#`
+/// - appears after a word boundary (not at the very start of a line,
+///   which would be a Markdown heading)
+///
+/// Only alphanumeric characters, `-`, and `_` are included in the tag name —
+/// trailing punctuation like `#rust,` yields the tag `rust`.
 pub fn extract_tags(content: &str) -> Vec<String> {
     let mut tags = Vec::new();
     for line in content.lines() {
@@ -297,7 +369,11 @@ pub fn extract_tags(content: &str) -> Vec<String> {
         }
         for word in line.split_whitespace() {
             if word.starts_with('#') && word.len() > 1 {
-                let tag = word.trim_start_matches('#').to_string();
+                let tag: String = word
+                    .trim_start_matches('#')
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                    .collect();
                 if !tag.is_empty() && !tags.contains(&tag) {
                     tags.push(tag);
                 }
@@ -307,38 +383,137 @@ pub fn extract_tags(content: &str) -> Vec<String> {
     tags
 }
 
-/// Simple Markdown → ANSI terminal renderer.
-pub fn render_to_terminal(content: &str) {
-    for line in content.lines() {
-        if let Some(h) = line.strip_prefix("# ") {
-            println!("\x1b[1;33m{h}\x1b[0m");
-        } else if let Some(h) = line.strip_prefix("## ") {
-            println!("\x1b[1;36m{h}\x1b[0m");
-        } else if let Some(h) = line.strip_prefix("### ") {
-            println!("\x1b[1;32m{h}\x1b[0m");
-        } else if let Some(t) = line.strip_prefix("- [ ] ") {
-            println!("  \x1b[31m☐\x1b[0m  {t}");
-        } else if let Some(t) = line
-            .strip_prefix("- [x] ")
-            .or_else(|| line.strip_prefix("- [X] "))
-        {
-            println!("  \x1b[32m✓\x1b[0m  \x1b[9m{t}\x1b[0m");
-        } else if let Some(t) = line
-            .strip_prefix("- ")
-            .or_else(|| line.strip_prefix("* "))
-        {
-            println!("  \x1b[34m•\x1b[0m  {t}");
-        } else if let Some(t) = line.strip_prefix("> ") {
-            println!("  \x1b[90m│\x1b[0m  \x1b[3m{t}\x1b[0m");
-        } else {
-            println!("{line}");
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+fn collect_md_paths_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir)
+        .with_context(|| format!("Cannot read directory: {}", dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_md_paths_recursive(&path, out)?;
+        } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn collect_notes_recursive(root: &Path, dir: &Path, out: &mut Vec<Note>) -> Result<()> {
+    let mut paths = Vec::new();
+    collect_md_paths_recursive(dir, &mut paths)?;
+    for path in paths {
+        match Note::from_path(root, &path) {
+            Ok(note) => out.push(note),
+            Err(e) => eprintln!("warning: skipping {}: {e}", path.display()),
+        }
+    }
+    Ok(())
+}
+
+fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
+    let mut folders = Vec::new();
+    let mut notes = Vec::new();
+
+    for entry in fs::read_dir(dir)
+        .with_context(|| format!("Cannot read directory: {}", dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let rel = relative_note_id(root, &path)?;
+            let children = read_tree_dir(root, &path)?;
+            folders.push(VaultNode::Folder {
+                name,
+                path: rel,
+                children,
+            });
+        } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+            match Note::from_path(root, &path) {
+                Ok(note) => notes.push(VaultNode::Note {
+                    slug: note.name,
+                    title: note.title,
+                    modified: note.modified,
+                    size: note.size,
+                    preview: note.preview,
+                    tags: note.tags,
+                }),
+                Err(e) => eprintln!("warning: skipping {}: {e}", path.display()),
+            }
+        }
+    }
+
+    folders.sort_by(|a, b| folder_name(a).cmp(folder_name(b)));
+    notes.sort_by(|a, b| note_title(a).cmp(note_title(b)));
+    Ok(folders.into_iter().chain(notes).collect())
+}
+
+fn folder_name(node: &VaultNode) -> &str {
+    match node {
+        VaultNode::Folder { name, .. } => name,
+        VaultNode::Note { title, .. } => title,
+    }
+}
+
+fn note_title(node: &VaultNode) -> &str {
+    match node {
+        VaultNode::Note { title, .. } => title,
+        VaultNode::Folder { name, .. } => name,
+    }
+}
+
+fn relative_note_id(root: &Path, path: &Path) -> Result<String> {
+    let rel = path
+        .strip_prefix(root)
+        .with_context(|| format!("Path {} is outside vault root", path.display()))?;
+    let rel = rel.with_extension("");
+    Ok(rel.to_string_lossy().replace('\\', "/"))
+}
+
+/// Resolve a note id used in CRUD APIs.
+/// Single-segment names are slugified; paths with `/` are validated as-is.
+pub fn resolve_note_id(name: &str) -> Result<String> {
+    let name = name.trim().replace('\\', "/");
+    if name.is_empty() {
+        bail!("Note id cannot be empty");
+    }
+    if name.starts_with('/') {
+        bail!("Note id must be relative");
+    }
+    if name.contains('/') {
+        validate_path_components(&name)?;
+        Ok(name)
+    } else {
+        let slug = slugify(&name);
+        bail_if_empty_slug(&slug, &name)?;
+        Ok(slug)
+    }
+}
+
+fn normalize_folder_path(path: &str) -> Result<String> {
+    let path = path.trim().replace('\\', "/");
+    if path.is_empty() {
+        bail!("Folder path cannot be empty");
+    }
+    if path.starts_with('/') {
+        bail!("Folder path must be relative");
+    }
+    validate_path_components(&path)?;
+    Ok(path)
+}
+
+fn validate_path_components(path: &str) -> Result<()> {
+    for part in path.split('/') {
+        if part.is_empty() || part == "." || part == ".." {
+            bail!("Invalid path component in '{path}'");
+        }
+    }
+    Ok(())
+}
 
 fn bail_if_empty_slug(slug: &str, original: &str) -> Result<()> {
     if slug.is_empty() {
@@ -442,6 +617,14 @@ mod tests {
     fn tags_deduplication() {
         let tags = extract_tags("word #rust another #rust");
         assert_eq!(tags.iter().filter(|t| *t == "rust").count(), 1);
+    }
+
+    #[test]
+    fn tags_strip_trailing_punctuation() {
+        // #rust, should yield "rust", not "rust,"
+        let tags = extract_tags("Check out #rust, it's great");
+        assert!(tags.contains(&"rust".to_string()), "got: {tags:?}");
+        assert!(!tags.iter().any(|t| t.contains(',')));
     }
 
     #[test]
@@ -668,7 +851,7 @@ mod tests {
     fn note_from_path_nonexistent_returns_err() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("ghost.md");
-        assert!(Note::from_path(&path).is_err());
+        assert!(Note::from_path(dir.path(), &path).is_err());
     }
 
     #[test]
@@ -676,7 +859,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("my-note.md");
         fs::write(&path, "# My Title\n\nPreview text #tag1").unwrap();
-        let note = Note::from_path(&path).unwrap();
+        let note = Note::from_path(dir.path(), &path).unwrap();
         assert_eq!(note.name, "my-note");
         assert_eq!(note.title, "My Title");
         assert!(note.preview.contains("Preview text"));
@@ -684,16 +867,92 @@ mod tests {
         assert!(note.size > 0);
     }
 
-    // ── render_to_terminal (smoke tests) ───────────────────────────────────
-
     #[test]
-    fn render_does_not_panic_on_empty() {
-        render_to_terminal("");
+    fn nested_note_roundtrip() {
+        let (_dir, store) = temp_store();
+        store.write("projects/todo", "# Todo\n\nnested").unwrap();
+        assert!(store.exists("projects/todo"));
+        assert_eq!(store.read("projects/todo").unwrap(), "# Todo\n\nnested");
+        let notes = store.list_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].name, "projects/todo");
     }
 
     #[test]
-    fn render_does_not_panic_on_all_variants() {
-        let md = "# H1\n## H2\n### H3\n- [ ] todo\n- [x] done\n- item\n* star\n> quote\nplain";
-        render_to_terminal(md);
+    fn list_tree_nested_folders() {
+        let (_dir, store) = temp_store();
+        store.create_folder("rust").unwrap();
+        store.write("rust/intro", "# Intro").unwrap();
+        store.write("readme", "# Readme").unwrap();
+
+        let tree = store.list_tree().unwrap();
+        assert_eq!(tree.len(), 2);
+
+        let folder = tree.iter().find_map(|n| match n {
+            VaultNode::Folder { name, children, .. } if name == "rust" => Some(children),
+            _ => None,
+        });
+        assert!(folder.is_some());
+        assert_eq!(folder.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn create_folder_idempotent() {
+        let (_dir, store) = temp_store();
+        store.create_folder("notes/daily").unwrap();
+        store.create_folder("notes/daily").unwrap();
+        assert!(store.root.join("notes/daily").is_dir());
+    }
+
+    #[test]
+    fn move_note_into_folder() {
+        let (_dir, store) = temp_store();
+        store.create_folder("projects").unwrap();
+        store.write("readme", "# Readme").unwrap();
+        let new_id = store.move_note("readme", Some("projects")).unwrap();
+        assert_eq!(new_id, "projects/readme");
+        assert!(!store.exists("readme"));
+        assert!(store.exists("projects/readme"));
+    }
+
+    #[test]
+    fn move_note_to_root() {
+        let (_dir, store) = temp_store();
+        store.write("projects/todo", "# Todo").unwrap();
+        let new_id = store.move_note("projects/todo", None).unwrap();
+        assert_eq!(new_id, "todo");
+        assert!(store.exists("todo"));
+        assert!(!store.exists("projects/todo"));
+    }
+
+    #[test]
+    fn move_folder_to_root() {
+        let (_dir, store) = temp_store();
+        store.create_folder("archive/old").unwrap();
+        store.write("archive/old/note", "# N").unwrap();
+        let new_path = store.move_folder("archive/old", None).unwrap();
+        assert_eq!(new_path, "old");
+        assert!(store.root.join("old").is_dir());
+        assert!(store.exists("old/note"));
+        assert!(!store.root.join("archive/old").exists());
+    }
+
+    #[test]
+    fn move_folder_into_folder() {
+        let (_dir, store) = temp_store();
+        store.create_folder("src").unwrap();
+        store.create_folder("docs").unwrap();
+        store.write("src/readme", "# R").unwrap();
+        let new_path = store.move_folder("src", Some("docs")).unwrap();
+        assert_eq!(new_path, "docs/src");
+        assert!(store.exists("docs/src/readme"));
+        assert!(!store.root.join("src").exists());
+    }
+
+    #[test]
+    fn move_folder_into_self_fails() {
+        let (_dir, store) = temp_store();
+        store.create_folder("a/b").unwrap();
+        assert!(store.move_folder("a", Some("a/b")).is_err());
     }
 }

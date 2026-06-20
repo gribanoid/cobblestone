@@ -41,6 +41,7 @@ From the repository root you can use `make` for the common local flows:
 
 ```bash
 make desktop        # run the native Tauri desktop app
+make desktop-build  # build the desktop release bundle
 make web            # run the browser UI
 make tui            # run the terminal UI
 make cli ARGS='ls'  # run any cb command
@@ -142,42 +143,55 @@ Open `http://127.0.0.1:3000` if the browser doesn't open automatically.
 
 ---
 
-## Desktop app — Leptos + Tauri
+## Desktop app — TypeScript + Tauri
 
-A native desktop window built with **Leptos 0.8** + **Tauri 2** — lightweight, no Electron, no browser required.
+A native desktop window built with **TypeScript**, **Vite**, and **Tauri 2** — lightweight, no Electron, no browser required. The UI talks to the same `cobblestone-core` storage layer as the CLI and web UI.
 
 ### Prerequisites (one-time setup)
 
 ```bash
-# 1. Install trunk — WASM bundler for Leptos
-cargo install trunk
+# 1. Node.js 18+ and npm
+node --version
+npm --version
 
-# 2. Install Tauri CLI v2
+# 2. Install frontend dependencies
+cd crates/desktop
+npm install
+
+# 3. Install Tauri CLI v2
 cargo install tauri-cli --version "^2.0.0" --locked
 
-# 3. macOS only — install Xcode Command Line Tools if not present
+# 4. macOS only — install Xcode Command Line Tools if not present
 xcode-select --install
 ```
 
 ### Run in development
 
-```bash
-cd crates/desktop
-cargo tauri dev
-```
-
-Or from the repository root:
+From the repository root:
 
 ```bash
 make desktop
 ```
 
-This starts trunk (hot-reload WASM server on port 1420) and opens the native window automatically. Changes to Leptos components reload instantly.
+This starts Vite (hot-reload on port 1420) and opens the native window automatically.
+
+You can also run the frontend alone for quick UI iteration:
+
+```bash
+cd crates/desktop
+npm run dev
+```
 
 ### Build a release binary
 
 ```bash
-cd crates/desktop
+make desktop-build
+```
+
+Or manually:
+
+```bash
+cd crates/desktop/src-tauri
 cargo tauri build
 ```
 
@@ -185,6 +199,16 @@ Output artifacts:
 - **macOS** → `target/release/bundle/macos/Cobblestone.app`
 - **Linux**  → `target/release/bundle/deb/*.deb` and `*.AppImage`
 - **Windows** → `target/release/bundle/msi/*.msi`
+
+### Desktop shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+S` / `⌘S` | Save current note |
+| `Tab` (in editor) | Insert 2 spaces |
+| `Esc` | Close delete confirmation dialog |
+
+Features: sidebar note list, search, edit/preview toggle, autosave, metadata panel (tags, wikilinks, backlinks).
 
 ---
 
@@ -224,14 +248,19 @@ Notes are plain UTF-8 Markdown files — readable and editable with any tool:
 
 ```
 cobblestone/
-  Cargo.toml              # workspace (crates/core, crates/cli)
+  Cargo.toml              # workspace (core, cli, desktop backend)
+  Makefile                # make desktop / web / tui / test
   crates/
     core/                 # cobblestone-core — shared storage library
     cli/                  # cb binary (clap · ratatui · axum)
     desktop/
-      src/                # Leptos 0.8 WASM frontend
-      src-tauri/          # Tauri 2 native backend
+      src/                # TypeScript frontend (Vite · marked)
+      src-tauri/          # Tauri 2 native backend (Rust IPC commands)
+      index.html          # app shell and styles
+      package.json        # npm scripts: dev, build
 ```
+
+The desktop frontend calls Tauri commands (`list_notes`, `get_note`, `save_note`, etc.) defined in `src-tauri/src/commands/`. All interfaces share the same Markdown files in `~/.cobblestone`.
 
 ---
 

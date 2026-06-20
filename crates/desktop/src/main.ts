@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { marked } from 'marked'
-import { api, NoteInfo, NoteGraph } from './api'
+import { api, NoteInfo, NoteGraph, VaultNode } from './api'
 
 // ── Markdown setup ────────────────────────────────────────────────────────
 
@@ -10,6 +10,8 @@ marked.use({ gfm: true, breaks: false })
 // ── State ─────────────────────────────────────────────────────────────────
 
 let notes: NoteInfo[] = []
+let tree: VaultNode[] = []
+let expandedFolders = new Set<string>()
 let activeSlug: string | null = null
 let activeTitle = ''
 let activeContent = ''
@@ -17,6 +19,9 @@ let graph: NoteGraph | null = null
 let isEditing = false
 let isDirty = false
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let suppressTreeClick = false
+let activeDropEl: HTMLElement | null = null
+const DRAG_THRESHOLD_PX = 5
 
 // ── DOM helpers ───────────────────────────────────────────────────────────
 
@@ -25,6 +30,7 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 const noteListEl     = el<HTMLDivElement>('note-list')
 const searchEl       = el<HTMLInputElement>('search')
 const newBtnEl       = el<HTMLButtonElement>('new-btn')
+const newFolderBtnEl = el<HTMLButtonElement>('new-folder-btn')
 const welcomeEl      = el<HTMLDivElement>('welcome')
 const editorAreaEl   = el<HTMLDivElement>('editor-area')
 const noteTitleEl    = el<HTMLInputElement>('note-title')
@@ -38,6 +44,16 @@ const themeBtnEl     = el<HTMLButtonElement>('theme-btn')
 const confirmModalEl = el<HTMLDivElement>('confirm-modal')
 const cancelDeleteEl = el<HTMLButtonElement>('cancel-delete-btn')
 const confirmDeleteEl= el<HTMLButtonElement>('confirm-delete-btn')
+const folderModalEl  = el<HTMLDivElement>('folder-modal')
+const folderModalHintEl = el<HTMLParagraphElement>('folder-modal-hint')
+const folderNameInputEl = el<HTMLInputElement>('folder-name-input')
+const cancelFolderEl = el<HTMLButtonElement>('cancel-folder-btn')
+const confirmFolderEl= el<HTMLButtonElement>('confirm-folder-btn')
+const noteModalEl    = el<HTMLDivElement>('note-modal')
+const noteModalHintEl= el<HTMLParagraphElement>('note-modal-hint')
+const noteTitleInputEl = el<HTMLInputElement>('note-title-input')
+const cancelNoteModalEl = el<HTMLButtonElement>('cancel-note-btn')
+const confirmNoteModalEl= el<HTMLButtonElement>('confirm-note-btn')
 const errorToastEl   = el<HTMLDivElement>('error-toast')
 const panelContentEl = el<HTMLDivElement>('panel-content')
 
@@ -49,12 +65,56 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
+function folderHint(): string {
+  return 'Root'
+}
+
+function noteParentFolder(slug: string): string | null {
+  const idx = slug.lastIndexOf('/')
+  return idx >= 0 ? slug.slice(0, idx) : null
+}
+
+function toggleFolder(path: string) {
+  if (expandedFolders.has(path)) expandedFolders.delete(path)
+  else expandedFolders.add(path)
+  renderVaultTree()
+}
+
+function moveSectionHtml(): string {
+  if (!activeSlug || noteParentFolder(activeSlug) === null) return ''
+  return `<section class="panel-section">
+      <h3>Move</h3>
+      <div class="panel-link-list">
+        <button type="button" class="panel-link" id="move-note-to-root-btn">Move note to root</button>
+      </div>
+    </section>`
+}
+
 // ── Render ────────────────────────────────────────────────────────────────
 
-function renderNoteList(items: NoteInfo[]) {
+function flattenTree(nodes: VaultNode[]): NoteInfo[] {
+  const out: NoteInfo[] = []
+  for (const node of nodes) {
+    if (node.kind === 'note') {
+      out.push({
+        slug: node.slug,
+        title: node.title,
+        modified: node.modified,
+        size: node.size,
+        preview: node.preview,
+        tags: node.tags,
+      })
+    } else {
+      out.push(...flattenTree(node.children))
+    }
+  }
+  return out
+}
+
+function renderSearchResults(items: NoteInfo[]) {
   if (items.length === 0) {
     noteListEl.innerHTML =
-      '<div class="empty-state">No notes yet.<br>Click "+ New note" to start.</div>'
+      '<div class="empty-state">No matching notes.</div>'
     return
   }
   noteListEl.innerHTML = items
@@ -62,7 +122,7 @@ function renderNoteList(items: NoteInfo[]) {
       (n) => `
       <div class="note-item${n.slug === activeSlug ? ' active' : ''}" data-slug="${escHtml(n.slug)}">
         <div class="note-item-title">${escHtml(n.title)}</div>
-        <div class="note-item-meta">${escHtml(n.modified)}${n.size > 0 ? ` · ${n.size} B` : ''}</div>
+        <div class="note-item-meta">${escHtml(n.modified)} · ${escHtml(n.slug)}</div>
         ${n.tags.length > 0
           ? `<div class="note-item-tags">${n.tags.map((t) => `<span class="tag">#${escHtml(t)}</span>`).join('')}</div>`
           : ''}
@@ -73,6 +133,221 @@ function renderNoteList(items: NoteInfo[]) {
   noteListEl.querySelectorAll<HTMLDivElement>('.note-item').forEach((div) => {
     div.addEventListener('click', () => openNote(div.dataset.slug!))
   })
+}
+
+function renderTreeNode(node: VaultNode): string {
+  if (node.kind === 'note') {
+    const active = node.slug === activeSlug ? ' active' : ''
+    return `
+      <div class="tree-note note-item${active}" data-slug="${escHtml(node.slug)}">
+        <span class="tree-spacer"></span>
+        <span class="tree-note-title">${escHtml(node.title)}</span>
+      </div>`
+  }
+
+  const expanded = expandedFolders.has(node.path)
+  const children = expanded
+    ? `<div class="tree-children">${node.children.map((c) => renderTreeNode(c)).join('')}</div>`
+    : ''
+
+  return `
+    <div class="tree-folder-wrap" data-drop-folder="${escHtml(node.path)}">
+      <div class="tree-folder${expanded ? ' expanded' : ''}" data-path="${escHtml(node.path)}">
+        <span class="tree-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+        <span class="tree-folder-icon"></span>
+        <span class="tree-folder-name">${escHtml(node.name)}</span>
+      </div>
+      ${children}
+    </div>`
+}
+
+function folderDestPath(from: string, destParent: string | null): string {
+  const name = from.split('/').pop()!
+  return destParent ? `${destParent}/${name}` : name
+}
+
+function remapPath(path: string, from: string, to: string): string {
+  if (path === from) return to
+  if (path.startsWith(`${from}/`)) return to + path.slice(from.length)
+  return path
+}
+
+type TreeDrag =
+  | { kind: 'note'; slug: string; el: HTMLElement }
+  | { kind: 'folder'; path: string; el: HTMLElement }
+
+function canDrop(payload: TreeDrag, destFolder: string | null): boolean {
+  if (destFolder === null) {
+    if (payload.kind === 'note') {
+      return noteParentFolder(payload.slug) !== null
+    }
+    return payload.path.includes('/')
+  }
+  if (payload.kind === 'note') {
+    return noteParentFolder(payload.slug) !== destFolder
+  }
+  const from = payload.path
+  const newPath = folderDestPath(from, destFolder)
+  if (newPath === from) return false
+  if (destFolder === from) return false
+  if (destFolder.startsWith(`${from}/`)) return false
+  return true
+}
+
+function executeDrop(payload: TreeDrag, destFolder: string | null) {
+  if (!canDrop(payload, destFolder)) return
+  if (payload.kind === 'note') {
+    void moveNoteToFolder(payload.slug, destFolder)
+  } else {
+    void moveFolderToParent(payload.path, destFolder)
+  }
+}
+
+function startTreeDrag(payload: TreeDrag, startX: number, startY: number) {
+  const dragEl = payload.el
+  let dragging = false
+
+  const onMove = (ev: PointerEvent) => {
+    if (!dragging) {
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return
+      dragging = true
+      dragEl.classList.add('dragging')
+      dragEl.style.pointerEvents = 'none'
+    }
+    ev.preventDefault()
+    const target = findDropTarget(ev.clientX, ev.clientY)
+    if (target && canDrop(payload, target.folder)) {
+      setDropHighlight(target.el)
+    } else {
+      setDropHighlight(null)
+    }
+  }
+
+  const onUp = (ev: PointerEvent) => {
+    document.removeEventListener('pointermove', onMove)
+    document.removeEventListener('pointerup', onUp)
+    document.removeEventListener('pointercancel', onUp)
+
+    dragEl.style.pointerEvents = ''
+    if (dragging) {
+      dragEl.classList.remove('dragging')
+      const target = findDropTarget(ev.clientX, ev.clientY)
+      clearDropHighlight()
+      if (target && canDrop(payload, target.folder)) {
+        executeDrop(payload, target.folder)
+      }
+      suppressTreeClick = true
+    } else {
+      clearDropHighlight()
+    }
+  }
+
+  document.addEventListener('pointermove', onMove)
+  document.addEventListener('pointerup', onUp)
+  document.addEventListener('pointercancel', onUp)
+}
+
+function clearDropHighlight() {
+  if (activeDropEl) {
+    activeDropEl.classList.remove('drag-over')
+    activeDropEl = null
+  }
+}
+
+function setDropHighlight(el: HTMLElement | null) {
+  if (activeDropEl === el) return
+  clearDropHighlight()
+  if (el) {
+    el.classList.add('drag-over')
+    activeDropEl = el
+  }
+}
+
+function findDropTarget(clientX: number, clientY: number): { el: HTMLElement; folder: string | null } | null {
+  const elements = document.elementsFromPoint(clientX, clientY)
+  for (const el of elements) {
+    const wrap = (el as HTMLElement).closest('[data-drop-folder]') as HTMLElement | null
+    if (!wrap || !noteListEl.contains(wrap)) continue
+    const path = wrap.dataset.dropFolder ?? ''
+    if (path.length > 0) return { el: wrap, folder: path }
+  }
+  for (const el of elements) {
+    const html = el as HTMLElement
+    if (!noteListEl.contains(html)) continue
+    if (html.closest('.tree-note, .tree-folder')) continue
+    const root = html.closest('#note-list, .vault-tree') as HTMLElement | null
+    if (root) return { el: root, folder: null }
+  }
+  return null
+}
+
+function bindTreeDragDrop() {
+  if (noteListEl.dataset.dragBound === '1') return
+  noteListEl.dataset.dragBound = '1'
+
+  noteListEl.addEventListener(
+    'click',
+    (e) => {
+      if (suppressTreeClick) {
+        suppressTreeClick = false
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    },
+    true,
+  )
+
+  noteListEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+
+    const noteEl = (e.target as HTMLElement).closest('.tree-note') as HTMLElement | null
+    const folderEl = (e.target as HTMLElement).closest('.tree-folder') as HTMLElement | null
+
+    let payload: TreeDrag | null = null
+    if (noteEl) {
+      payload = { kind: 'note', slug: noteEl.dataset.slug!, el: noteEl }
+    } else if (folderEl) {
+      payload = { kind: 'folder', path: folderEl.dataset.path!, el: folderEl }
+    }
+    if (!payload) return
+
+    startTreeDrag(payload, e.clientX, e.clientY)
+  })
+}
+
+function renderVaultTree() {
+  const items = tree.map((n) => renderTreeNode(n)).join('')
+  const emptyHint = tree.length === 0
+    ? '<div class="empty-state tree-empty-hint">No folders yet.<br>Use the folder icon above to start.</div>'
+    : ''
+
+  noteListEl.innerHTML = `
+    <div class="vault-tree">
+      ${items}
+      ${emptyHint}
+    </div>`
+
+  noteListEl.querySelectorAll<HTMLDivElement>('.tree-folder').forEach((div) => {
+    div.addEventListener('click', () => {
+      toggleFolder(div.dataset.path!)
+    })
+  })
+
+  noteListEl.querySelectorAll<HTMLDivElement>('.tree-note').forEach((div) => {
+    const slug = div.dataset.slug!
+    div.addEventListener('click', () => openNote(slug))
+  })
+}
+
+function renderNoteList(items: NoteInfo[]) {
+  const q = searchEl.value.trim()
+  if (q) {
+    renderSearchResults(items)
+    return
+  }
+  renderVaultTree()
 }
 
 function renderEditorArea() {
@@ -141,10 +416,19 @@ function renderRightPanel() {
         : '<p class="panel-muted">No tags yet</p>'}
     </section>
     ${linkSection('Outgoing links', 'No wikilinks found', g.outgoing)}
-    ${linkSection('Backlinks', 'No backlinks yet', g.backlinks)}`
+    ${linkSection('Backlinks', 'No backlinks yet', g.backlinks)}
+    ${moveSectionHtml()}`
 
   panelContentEl.querySelectorAll<HTMLButtonElement>('[data-slug]').forEach((btn) => {
     btn.addEventListener('click', () => openNote(btn.dataset.slug!))
+  })
+
+  bindMoveButtons()
+}
+
+function bindMoveButtons() {
+  document.getElementById('move-note-to-root-btn')?.addEventListener('click', () => {
+    if (activeSlug) void moveNoteToFolder(activeSlug, null)
   })
 }
 
@@ -171,7 +455,8 @@ function linkSection(
 
 async function loadNotes() {
   try {
-    notes = await api.listNotes()
+    tree = await api.listTree()
+    notes = flattenTree(tree)
     renderNoteList(notes)
   } catch (e) {
     showError(String(e))
@@ -218,9 +503,10 @@ async function openNote(slug: string) {
 
 async function createNote() {
   const titleFromSearch = searchEl.value.trim()
-  const title = titleFromSearch || `Note ${Date.now()}`
+  const title = noteTitleInputEl.value.trim() || titleFromSearch || `Note ${Date.now()}`
+  closeNoteModal()
   try {
-    const slug = await api.createNote(title)
+    const slug = await api.createNote(title, null)
     searchEl.value = ''
     await loadNotes()
     await openNote(slug)
@@ -229,6 +515,84 @@ async function createNote() {
   } catch (e) {
     showError(String(e))
   }
+}
+
+async function moveFolderToParent(folderPath: string, destParent: string | null) {
+  if (!canDrop({ kind: 'folder', path: folderPath, el: document.body }, destParent)) return
+  try {
+    const newPath = await api.moveFolder(folderPath, destParent)
+    if (destParent) expandedFolders.add(destParent)
+    expandedFolders.add(newPath)
+
+    expandedFolders = new Set(
+      [...expandedFolders].map((p) => remapPath(p, folderPath, newPath)),
+    )
+    if (activeSlug) {
+      activeSlug = remapPath(activeSlug, folderPath, newPath)
+    }
+    await loadNotes()
+    renderRightPanel()
+  } catch (e) {
+    showError(String(e))
+  }
+}
+
+async function moveNoteToFolder(slug: string, folder: string | null) {
+  if (folder !== null && noteParentFolder(slug) === folder) return
+  if (folder === null && noteParentFolder(slug) === null) return
+  try {
+    const newSlug = await api.moveNote(slug, folder)
+    if (folder) expandedFolders.add(folder)
+    if (activeSlug === slug) activeSlug = newSlug
+    await loadNotes()
+    if (activeSlug === newSlug) {
+      renderNoteList(notes)
+      renderRightPanel()
+    }
+  } catch (e) {
+    showError(String(e))
+  }
+}
+
+function openNoteModal() {
+  const titleFromSearch = searchEl.value.trim()
+  noteTitleInputEl.value = titleFromSearch
+  noteModalHintEl.textContent = folderHint()
+  noteModalEl.style.display = 'flex'
+  noteTitleInputEl.focus()
+  noteTitleInputEl.select()
+}
+
+function closeNoteModal() {
+  noteModalEl.style.display = 'none'
+}
+
+async function createFolder() {
+  const name = folderNameInputEl.value.trim()
+  if (!name) {
+    folderNameInputEl.focus()
+    return
+  }
+  const path = name
+  closeFolderModal()
+  try {
+    await api.createFolder(path)
+    expandedFolders.add(path)
+    await loadNotes()
+  } catch (e) {
+    showError(String(e))
+  }
+}
+
+function openFolderModal() {
+  folderNameInputEl.value = ''
+  folderModalHintEl.textContent = folderHint()
+  folderModalEl.style.display = 'flex'
+  folderNameInputEl.focus()
+}
+
+function closeFolderModal() {
+  folderModalEl.style.display = 'none'
 }
 
 function contentWithTitle(content: string, title: string): string {
@@ -335,7 +699,26 @@ searchEl.addEventListener('input', async () => {
   }
 })
 
-newBtnEl.addEventListener('click', createNote)
+newBtnEl.addEventListener('click', openNoteModal)
+newFolderBtnEl.addEventListener('click', openFolderModal)
+
+cancelNoteModalEl.addEventListener('click', closeNoteModal)
+confirmNoteModalEl.addEventListener('click', () => void createNote())
+noteTitleInputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    void createNote()
+  }
+})
+
+cancelFolderEl.addEventListener('click', closeFolderModal)
+confirmFolderEl.addEventListener('click', () => void createFolder())
+folderNameInputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    void createFolder()
+  }
+})
 
 noteTitleEl.addEventListener('input', () => {
   activeTitle = noteTitleEl.value
@@ -384,8 +767,10 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault()
     saveNote()
   }
-  if (e.key === 'Escape' && confirmModalEl.style.display !== 'none') {
-    confirmModalEl.style.display = 'none'
+  if (e.key === 'Escape') {
+    if (confirmModalEl.style.display !== 'none') confirmModalEl.style.display = 'none'
+    if (folderModalEl.style.display !== 'none') closeFolderModal()
+    if (noteModalEl.style.display !== 'none') closeNoteModal()
   }
 })
 
@@ -406,4 +791,5 @@ editorEl.addEventListener('keydown', (e) => {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
+bindTreeDragDrop()
 loadNotes()

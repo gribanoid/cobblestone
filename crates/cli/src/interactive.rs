@@ -197,7 +197,7 @@ fn event_loop(
                     (KeyCode::Char('e'), _) => {
                         if let Some(name) = app.current_note_name() {
                             leave_tui(term)?;
-                            let result = cobblestone_core::cmd_edit(&app.store, &name);
+                            let result = crate::commands::cmd_edit(&app.store, &name);
                             enter_tui(term)?;
                             if let Err(e) = result {
                                 app.show_error(e);
@@ -265,7 +265,7 @@ fn event_loop(
                                         app.selected = i;
                                     }
                                     leave_tui(term)?;
-                                    let result = cobblestone_core::cmd_edit(&app.store, &name);
+                                    let result = crate::commands::cmd_edit(&app.store, &name);
                                     enter_tui(term)?;
                                     if let Err(e) = result {
                                         app.show_error(e);

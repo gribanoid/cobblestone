@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use cobblestone_core::Note;
+use cobblestone_core::{Note, VaultNode};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -69,8 +69,25 @@ pub fn save_note(slug: String, content: String, state: State<AppState>) -> Resul
 }
 
 #[tauri::command]
-pub fn create_note(title: String, state: State<AppState>) -> Result<String, String> {
-    let slug = cobblestone_core::slugify(&title);
+pub fn list_tree(state: State<AppState>) -> Result<Vec<VaultNode>, String> {
+    state.store.list_tree().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_folder(path: String, state: State<AppState>) -> Result<(), String> {
+    state.store.create_folder(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_note(
+    title: String,
+    folder: Option<String>,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let slug = state
+        .store
+        .note_id_from_title(folder.as_deref(), &title)
+        .map_err(|e| e.to_string())?;
     if state.store.exists(&slug) {
         return Err(format!("Note '{}' already exists", slug));
     }
@@ -81,6 +98,30 @@ pub fn create_note(title: String, state: State<AppState>) -> Result<String, Stri
         .write(&slug, &content)
         .map_err(|e| e.to_string())?;
     Ok(slug)
+}
+
+#[tauri::command]
+pub fn move_note(
+    slug: String,
+    folder: Option<String>,
+    state: State<AppState>,
+) -> Result<String, String> {
+    state
+        .store
+        .move_note(&slug, folder.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn move_folder(
+    path: String,
+    dest_parent: Option<String>,
+    state: State<AppState>,
+) -> Result<String, String> {
+    state
+        .store
+        .move_folder(&path, dest_parent.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
