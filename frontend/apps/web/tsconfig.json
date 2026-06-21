@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@cobblestone/api": ["../../packages/api/src"],
+      "@cobblestone/api/*": ["../../packages/api/src/*"],
+      "@cobblestone/ui": ["../../packages/ui/src"],
+      "@cobblestone/ui/*": ["../../packages/ui/src/*"]
+    }
+  },
+  "include": ["src"]
+}

@@ -126,8 +126,9 @@ cb -i
 A browser-based editor with live Markdown preview, dark/light theme, and auto-save.
 
 ```bash
-cb web              # starts server, opens browser automatically
-cb web --port 8080  # choose a different port
+make web-build   # build shared web UI first
+make web
+# or: cargo run -p cb -- web
 ```
 
 Open `http://127.0.0.1:3000` if the browser doesn't open automatically.
@@ -154,8 +155,7 @@ A native desktop window built with **TypeScript**, **Vite**, and **Tauri 2** —
 node --version
 npm --version
 
-# 2. Install frontend dependencies
-cd crates/desktop
+# 2. Install frontend dependencies (from repo root)
 npm install
 
 # 3. Install Tauri CLI v2
@@ -178,8 +178,7 @@ This starts Vite (hot-reload on port 1420) and opens the native window automatic
 You can also run the frontend alone for quick UI iteration:
 
 ```bash
-cd crates/desktop
-npm run dev
+npm run dev:desktop
 ```
 
 ### Build a release binary
@@ -248,19 +247,25 @@ Notes are plain UTF-8 Markdown files — readable and editable with any tool:
 
 ```
 cobblestone/
+  package.json            # npm workspaces (shared frontend)
+  tsconfig.base.json
+  frontend/
+    packages/
+      api/                # CobblestoneApi types + web/tauri adapters
+      ui/                 # shared UI (CSS, app logic, components)
+    apps/
+      desktop/            # Vite entry → Tauri window
+      web/                # Vite entry → axum static files
   Cargo.toml              # workspace (core, cli, desktop backend)
   Makefile                # make desktop / web / tui / test
   crates/
     core/                 # cobblestone-core — shared storage library
     cli/                  # cb binary (clap · ratatui · axum)
     desktop/
-      src/                # TypeScript frontend (Vite · marked)
       src-tauri/          # Tauri 2 native backend (Rust IPC commands)
-      index.html          # app shell and styles
-      package.json        # npm scripts: dev, build
 ```
 
-The desktop frontend calls Tauri commands (`list_notes`, `get_note`, `save_note`, etc.) defined in `src-tauri/src/commands/`. All interfaces share the same Markdown files in `~/.cobblestone`.
+The shared UI uses `CobblestoneApi` — Tauri `invoke` in desktop, REST `/api/*` in web. All interfaces share the same Markdown files in `~/.cobblestone`.
 
 ---
 

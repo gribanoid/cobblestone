@@ -7,11 +7,8 @@
 crates/desktop/src-tauri/gen/
 
 # ── Node / npm ────────────────────────────────────────────────────────────────
-node_modules/
-crates/desktop/node_modules/
-
-# ── Trunk (WASM build output) ─────────────────────────────────────────────────
-crates/desktop/dist/
+**/node_modules/
+frontend/apps/*/dist/
 
 # ── Editor / IDE ──────────────────────────────────────────────────────────────
 .idea/

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cobblestone</title>
+  <script>
+    (function() {
+      var t = localStorage.getItem('cb-theme') || 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- ── Sidebar ───────────────────────────────────────────────────────── -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">
+          <img src="/cobblestone.png" alt="" class="app-icon" width="18" height="18" />
+          <span>Cobblestone</span>
+        </span>
+      </div>
+      <div class="search-wrap">
+        <input id="search" type="text" class="search-input" placeholder="Search notes…" autocomplete="off" />
+      </div>
+      <div class="sidebar-actions">
+        <div class="sidebar-toolbar">
+          <button id="new-btn" class="icon-tool-btn" type="button" title="New note" aria-label="New note">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3" y="2.5" width="10" height="11" rx="1"/>
+              <path d="M9 6.5l2.5 2.5M8 7.5l1 1"/>
+              <path d="M7.5 8l2-2"/>
+            </svg>
+          </button>
+          <button id="new-folder-btn" class="icon-tool-btn" type="button" title="New folder" aria-label="New folder">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 4.5h4l1.2 1.5H13.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1z"/>
+              <path d="M8 8.5v3M6.5 10h3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="note-list" class="note-list"></div>
+    </aside>
+
+    <!-- ── Main content ──────────────────────────────────────────────────── -->
+    <main class="content">
+
+      <!-- Welcome screen -->
+      <div id="welcome" class="welcome">
+        <div class="logo-big">
+          <img src="/cobblestone.png" alt="" class="app-icon app-icon-large" width="64" height="64" />
+        </div>
+        <h2>Cobblestone</h2>
+        <p>Write anything. Store everything. Own it all.</p>
+        <span class="welcome-hint">Use the toolbar icons to create notes and folders</span>
+      </div>
+
+      <!-- Editor / preview area (hidden until a note is open) -->
+      <div id="editor-area" class="editor-container" style="display:none">
+        <div class="toolbar">
+          <input id="note-title" type="text" class="note-title-input" placeholder="Note title" autocomplete="off" />
+          <div class="toolbar-actions">
+            <span id="save-indicator" class="edit-indicator">saved</span>
+            <button id="toggle-mode-btn" class="tb-btn">Edit</button>
+            <button id="save-btn" class="tb-btn primary">Save</button>
+            <button id="delete-btn" class="tb-btn danger">Delete</button>
+            <button id="theme-btn" class="icon-btn" title="Toggle theme">◑</button>
+          </div>
+        </div>
+        <div class="editor-wrap">
+          <textarea id="editor" class="editor" spellcheck="false"></textarea>
+          <div id="preview" class="preview hidden"></div>
+        </div>
+      </div>
+
+      <!-- Delete confirmation modal -->
+      <div id="confirm-modal" class="modal-backdrop" style="display:none">
+        <div class="modal">
+          <h3>Delete note?</h3>
+          <p>This will permanently remove the note from disk. This action cannot be undone.</p>
+          <div class="modal-actions">
+            <button id="cancel-delete-btn" class="tb-btn">Cancel</button>
+            <button id="confirm-delete-btn" class="tb-btn danger">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- New folder modal -->
+      <div id="folder-modal" class="modal-backdrop" style="display:none">
+        <div class="modal">
+          <h3>New folder</h3>
+          <p id="folder-modal-hint">Root</p>
+          <input id="folder-name-input" type="text" class="modal-input" placeholder="Folder name" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="cancel-folder-btn" class="tb-btn">Cancel</button>
+            <button id="confirm-folder-btn" class="tb-btn primary">Create</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- New note modal -->
+      <div id="note-modal" class="modal-backdrop" style="display:none">
+        <div class="modal">
+          <h3>New note</h3>
+          <p id="note-modal-hint">Root</p>
+          <input id="note-title-input" type="text" class="modal-input" placeholder="Note title" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="cancel-note-btn" class="tb-btn">Cancel</button>
+            <button id="confirm-note-btn" class="tb-btn primary">Create</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error toast -->
+      <div id="error-toast" class="error-toast" style="display:none"></div>
+
+    </main>
+
+    <!-- ── Right panel ────────────────────────────────────────────────────── -->
+    <aside class="right-panel">
+      <div id="panel-content">
+        <div class="panel-empty">
+          <h3>Note info</h3>
+          <p>Open a note to see tags, metadata, wikilinks, and backlinks.</p>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

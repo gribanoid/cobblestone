@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "identifier": "dev.cobblestone.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "cd ../../frontend && npm run dev --workspace @cobblestone/desktop",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "cd ../../frontend && npm run build --workspace @cobblestone/desktop",
+    "frontendDist": "../../../frontend/apps/desktop/dist"
   },
   "app": {
     "withGlobalTauri": true,
@@ -29,11 +29,7 @@
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/cobblestone.png"
     ]
   }
 }

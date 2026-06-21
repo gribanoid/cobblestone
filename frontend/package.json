@@ -1,0 +1,16 @@
+{
+  "name": "cobblestone",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "sync-icon": "cp ../crates/desktop/src-tauri/icons/cobblestone.png packages/ui/public/cobblestone.png",
+    "dev:desktop": "npm run dev --workspace @cobblestone/desktop",
+    "dev:web": "npm run dev --workspace @cobblestone/web",
+    "build:desktop": "npm run build --workspace @cobblestone/desktop",
+    "build:web": "npm run build --workspace @cobblestone/web",
+    "build": "npm run build:desktop && npm run build:web"
+  }
+}
