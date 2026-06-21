@@ -26,6 +26,7 @@ export function flattenTree(nodes: VaultNode[]): NoteInfo[] {
       out.push({
         slug: node.slug,
         title: node.title,
+        created: node.created,
         modified: node.modified,
         size: node.size,
         preview: node.preview,

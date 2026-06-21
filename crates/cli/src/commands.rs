@@ -3,7 +3,6 @@
 use std::io::{self, Write};
 
 use anyhow::{bail, Context, Result};
-use chrono::Local;
 use cobblestone_core::{slugify, Store};
 
 pub fn cmd_new(store: &Store, title: &str) -> Result<()> {
@@ -15,8 +14,7 @@ pub fn cmd_new(store: &Store, title: &str) -> Result<()> {
     if store.exists(&name) {
         bail!("Note '{}' already exists. Use `cb edit {}` to edit it.", name, name);
     }
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let content = format!("# {title}\n\n*Created: {date}*\n\n");
+    let content = format!("# {title}\n\n");
     store.write(&name, &content)?;
 
     println!("Created: {}", store.path_for(&name).display());

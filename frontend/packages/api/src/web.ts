@@ -53,6 +53,14 @@ export const webApi: CobblestoneApi = {
   deleteNote: (slug) =>
     api<void>('DELETE', `/api/notes/${encodeURIComponent(slug)}`),
 
+  renameNote: (slug, title) =>
+    api<{ slug: string }>('POST', '/api/notes/rename', { slug, title }).then((r) => r.slug),
+
+  renameFolder: (path, name) =>
+    api<{ path: string }>('POST', '/api/folders/rename', { path, name }).then((r) => r.path),
+
+  deleteFolder: (path) => api<void>('POST', '/api/folders/delete', { path }),
+
   searchNotes: (query) =>
     api<NoteInfo[]>('GET', `/api/search?query=${encodeURIComponent(query)}`),
 

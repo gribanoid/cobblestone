@@ -146,6 +146,7 @@ export function bindTreeDragDrop(dom: DomRefs, handlers: DragHandlers) {
 
   noteListEl.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return
+    if (e.ctrlKey) return
 
     const noteEl = (e.target as HTMLElement).closest('.tree-note') as HTMLElement | null
     const folderEl = (e.target as HTMLElement).closest('.tree-folder') as HTMLElement | null

@@ -255,8 +255,7 @@ fn event_loop(
                                     text: format!("Note '{name}' already exists. Press 'e' to edit."),
                                 };
                             } else {
-                                let date    = chrono::Local::now().format("%Y-%m-%d").to_string();
-                                let content = format!("# {title}\n\n*Created: {date}*\n\n");
+                                let content = format!("# {title}\n\n");
                                 if let Err(e) = app.store.write(&name, &content) {
                                     app.show_error(e);
                                 } else {

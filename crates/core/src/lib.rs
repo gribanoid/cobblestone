@@ -158,6 +158,100 @@ impl Store {
         Ok(new_path)
     }
 
+    /// Rename a note (updates file id from title and `#` heading in content).
+    pub fn rename_note(&self, from: &str, new_title: &str) -> Result<String> {
+        let from_id = resolve_note_id(from)?;
+        let new_title = new_title.trim();
+        if new_title.is_empty() {
+            bail!("Note title cannot be empty");
+        }
+        let new_file = slugify(new_title);
+        bail_if_empty_slug(&new_file, new_title)?;
+
+        let new_id = match from_id.rsplit_once('/') {
+            Some((parent, _)) => format!("{parent}/{new_file}"),
+            None => new_file,
+        };
+
+        let from_path = self.root.join(format!("{from_id}.md"));
+        if !from_path.is_file() {
+            bail!("Note '{from_id}' not found");
+        }
+
+        let content = fs::read_to_string(&from_path)
+            .with_context(|| format!("Cannot read note '{from_id}'"))?;
+        let new_content = set_content_title(&content, new_title);
+
+        if from_id == new_id {
+            fs::write(&from_path, new_content)
+                .with_context(|| format!("Cannot write note '{from_id}'"))?;
+            return Ok(new_id);
+        }
+
+        if self.exists(&new_id) {
+            bail!("Note '{new_id}' already exists");
+        }
+
+        let to_path = self.root.join(format!("{new_id}.md"));
+        if let Some(parent) = to_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Cannot create parent directory for '{new_id}'"))?;
+        }
+        fs::write(&to_path, &new_content)
+            .with_context(|| format!("Cannot write note '{new_id}'"))?;
+        fs::remove_file(&from_path)
+            .with_context(|| format!("Cannot remove note '{from_id}'"))?;
+        Ok(new_id)
+    }
+
+    /// Rename a folder in place (same parent, new name). Returns the new path.
+    pub fn rename_folder(&self, from: &str, new_name: &str) -> Result<String> {
+        let from = normalize_folder_path(from)?;
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            bail!("Folder name cannot be empty");
+        }
+        validate_path_components(new_name)?;
+
+        let new_path = match from.rsplit_once('/') {
+            Some((parent, _)) => format!("{parent}/{new_name}"),
+            None => new_name.to_string(),
+        };
+
+        if from == new_path {
+            return Ok(new_path);
+        }
+
+        let from_dir = self.root.join(&from);
+        if !from_dir.is_dir() {
+            bail!("Folder '{from}' not found");
+        }
+
+        let to_dir = self.root.join(&new_path);
+        if to_dir.exists() {
+            bail!("Folder '{new_path}' already exists");
+        }
+
+        fs::rename(&from_dir, &to_dir)
+            .with_context(|| format!("Cannot rename folder '{from}' to '{new_path}'"))?;
+        Ok(new_path)
+    }
+
+    /// Delete a folder and all contents recursively.
+    pub fn delete_folder(&self, path: &str) -> Result<()> {
+        let path = normalize_folder_path(path)?;
+        let dir = self.root.join(&path);
+        if !dir.is_dir() {
+            bail!("Folder '{path}' not found");
+        }
+        if dir == self.root {
+            bail!("Cannot delete vault root");
+        }
+        fs::remove_dir_all(&dir)
+            .with_context(|| format!("Cannot delete folder '{path}'"))?;
+        Ok(())
+    }
+
     pub fn exists(&self, name: &str) -> bool {
         self.note_file_path(name)
             .ok()
@@ -238,6 +332,7 @@ pub enum VaultNode {
     Note {
         slug: String,
         title: String,
+        created: String,
         modified: String,
         size: u64,
         preview: String,
@@ -249,12 +344,37 @@ pub enum VaultNode {
 // Note metadata
 // ---------------------------------------------------------------------------
 
+fn format_file_time(t: std::time::SystemTime) -> String {
+    let dt: chrono::DateTime<Local> = t.into();
+    dt.format("%Y-%m-%d %H:%M").to_string()
+}
+
+fn is_created_stamp(line: &str) -> bool {
+    let t = line.trim();
+    t.starts_with("*Created:") && t.ends_with('*')
+}
+
+fn set_content_title(content: &str, title: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.first().is_some_and(|l| l.starts_with("# ")) {
+        let rest = lines[1..].join("\n");
+        if rest.is_empty() {
+            format!("# {title}")
+        } else {
+            format!("# {title}\n{rest}")
+        }
+    } else {
+        format!("# {title}\n\n{content}")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     pub name:         String,
     pub title:        String,
     /// Stored as a `String` so serialisation is cross-platform.
     pub path:         String,
+    pub created:      String,
     pub modified:     String,
     pub modified_raw: u64,
     pub size:         u64,
@@ -290,7 +410,7 @@ impl Note {
 
         let preview: String = content
             .lines()
-            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty() && !is_created_stamp(l))
             .take(2)
             .collect::<Vec<_>>()
             .join(" ")
@@ -300,22 +420,25 @@ impl Note {
 
         let tags = extract_tags(&content);
 
+        let created_time = meta.created().ok().or_else(|| meta.modified().ok());
+        let created = created_time
+            .map(|t| format_file_time(t))
+            .unwrap_or_default();
+
         let sys_time = meta.modified().ok();
         let modified_raw = sys_time
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let modified = sys_time
-            .map(|t| {
-                let dt: chrono::DateTime<Local> = t.into();
-                dt.format("%Y-%m-%d %H:%M").to_string()
-            })
+            .map(format_file_time)
             .unwrap_or_default();
 
         let note = Self {
             name,
             title,
             path: path.to_string_lossy().into_owned(),
+            created,
             modified,
             modified_raw,
             size: meta.len(),
@@ -437,6 +560,7 @@ fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
                 Ok(note) => notes.push(VaultNode::Note {
                     slug: note.name,
                     title: note.title,
+                    created: note.created,
                     modified: note.modified,
                     size: note.size,
                     preview: note.preview,
@@ -954,5 +1078,36 @@ mod tests {
         let (_dir, store) = temp_store();
         store.create_folder("a/b").unwrap();
         assert!(store.move_folder("a", Some("a/b")).is_err());
+    }
+
+    #[test]
+    fn rename_note_updates_slug_and_title() {
+        let (_dir, store) = temp_store();
+        store.write("hello", "# Hello\n\nBody").unwrap();
+        let new_id = store.rename_note("hello", "World").unwrap();
+        assert_eq!(new_id, "world");
+        assert!(!store.exists("hello"));
+        let content = store.read("world").unwrap();
+        assert!(content.starts_with("# World"));
+    }
+
+    #[test]
+    fn rename_folder_in_place() {
+        let (_dir, store) = temp_store();
+        store.create_folder("old").unwrap();
+        store.write("old/note", "# N").unwrap();
+        let new_path = store.rename_folder("old", "new").unwrap();
+        assert_eq!(new_path, "new");
+        assert!(store.exists("new/note"));
+        assert!(!store.root.join("old").exists());
+    }
+
+    #[test]
+    fn delete_folder_removes_contents() {
+        let (_dir, store) = temp_store();
+        store.create_folder("tmp").unwrap();
+        store.write("tmp/a", "# A").unwrap();
+        store.delete_folder("tmp").unwrap();
+        assert!(!store.root.join("tmp").exists());
     }
 }

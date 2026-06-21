@@ -66,7 +66,6 @@
             <span id="save-indicator" class="edit-indicator">saved</span>
             <button id="toggle-mode-btn" class="tb-btn">Edit</button>
             <button id="save-btn" class="tb-btn primary">Save</button>
-            <button id="delete-btn" class="tb-btn danger">Delete</button>
             <button id="theme-btn" class="icon-btn" title="Toggle theme">◑</button>
           </div>
         </div>
@@ -79,11 +78,23 @@
       <!-- Delete confirmation modal -->
       <div id="confirm-modal" class="modal-backdrop" style="display:none">
         <div class="modal">
-          <h3>Delete note?</h3>
-          <p>This will permanently remove the note from disk. This action cannot be undone.</p>
+          <h3 id="confirm-modal-title">Delete note?</h3>
+          <p id="confirm-modal-message">This will permanently remove the note from disk. This action cannot be undone.</p>
           <div class="modal-actions">
             <button id="cancel-delete-btn" class="tb-btn">Cancel</button>
             <button id="confirm-delete-btn" class="tb-btn danger">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rename modal -->
+      <div id="rename-modal" class="modal-backdrop" style="display:none">
+        <div class="modal">
+          <h3 id="rename-modal-title">Rename</h3>
+          <input id="rename-input" type="text" class="modal-input" placeholder="Name" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="cancel-rename-btn" class="tb-btn">Cancel</button>
+            <button id="confirm-rename-btn" class="tb-btn primary">Rename</button>
           </div>
         </div>
       </div>

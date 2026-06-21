@@ -1,6 +1,7 @@
 export interface NoteInfo {
   slug: string
   title: string
+  created: string
   modified: string
   size: number
   preview: string
@@ -34,6 +35,7 @@ export type VaultNode =
       kind: 'note'
       slug: string
       title: string
+      created: string
       modified: string
       size: number
       preview: string
@@ -50,6 +52,9 @@ export interface CobblestoneApi {
   moveNote(slug: string, folder?: string | null): Promise<string>
   moveFolder(path: string, destParent?: string | null): Promise<string>
   deleteNote(slug: string): Promise<void>
+  renameNote(slug: string, title: string): Promise<string>
+  renameFolder(path: string, name: string): Promise<string>
+  deleteFolder(path: string): Promise<void>
   searchNotes(query: string): Promise<NoteInfo[]>
   noteGraph(slug: string): Promise<NoteGraph>
 }

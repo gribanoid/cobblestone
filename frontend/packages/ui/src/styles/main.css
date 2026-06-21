@@ -95,7 +95,7 @@ input, textarea { font: inherit; outline: none }
   stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 .note-list { flex: 1; overflow-y: auto; padding: 2px 0; min-height: 0 }
-.vault-tree { padding: 2px 0 8px; min-height: 48px }
+.vault-tree { padding: 2px 0 8px; min-height: 100% }
 .note-list.drag-over,
 .vault-tree.drag-over {
   background: color-mix(in srgb, var(--accent), transparent 92%);
@@ -292,6 +292,29 @@ input, textarea { font: inherit; outline: none }
   font-size: 12px; color: var(--muted);
   border: 1px solid var(--border); border-radius: 3px;
   padding: 6px 14px; background: var(--surface);
+}
+
+.tree-context-menu {
+  position: fixed; z-index: 150;
+  min-width: 140px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+}
+.tree-context-item {
+  display: block; width: 100%;
+  text-align: left; padding: 6px 10px;
+  border-radius: 4px; font-size: 12.5px;
+  color: var(--text); background: transparent;
+}
+.tree-context-item:hover { background: var(--surface2) }
+.tree-context-item.danger { color: var(--red) }
+.tree-context-item.danger:hover { background: color-mix(in srgb, var(--red) 12%, var(--surface2)) }
+.tree-context-separator {
+  border: none;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
 }
 
 /* ─── Confirm modal ──────────────────────────────────────────────────────── */

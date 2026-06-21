@@ -25,6 +25,12 @@ export const tauriApi: CobblestoneApi = {
 
   deleteNote: (slug) => invoke('delete_note', { slug }),
 
+  renameNote: (slug, title) => invoke('rename_note', { slug, title }),
+
+  renameFolder: (path, name) => invoke('rename_folder', { path, name }),
+
+  deleteFolder: (path) => invoke('delete_folder', { path }),
+
   searchNotes: (query) => invoke('search_notes', { query }),
 
   noteGraph: (slug) => invoke('note_graph', { slug }),

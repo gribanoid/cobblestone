@@ -22,6 +22,9 @@ pub fn run() {
             commands::notes::move_note,
             commands::notes::move_folder,
             commands::notes::delete_note,
+            commands::notes::rename_note,
+            commands::notes::rename_folder,
+            commands::notes::delete_folder,
             commands::notes::search_notes,
             commands::graph::note_graph,
         ])

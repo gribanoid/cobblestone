@@ -10,6 +10,7 @@ use super::AppState;
 pub struct NoteInfo {
     pub slug: String,
     pub title: String,
+    pub created: String,
     pub modified: String,
     pub size: u64,
     pub preview: String,
@@ -21,6 +22,7 @@ impl From<&Note> for NoteInfo {
         Self {
             slug: n.name.clone(),
             title: n.title.clone(),
+            created: n.created.clone(),
             modified: n.modified.clone(),
             size: n.size,
             preview: n.preview.clone(),
@@ -91,8 +93,7 @@ pub fn create_note(
     if state.store.exists(&slug) {
         return Err(format!("Note '{}' already exists", slug));
     }
-    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let content = format!("# {title}\n\n*Created: {date}*\n\n");
+    let content = format!("# {title}\n\n");
     state
         .store
         .write(&slug, &content)
@@ -127,6 +128,35 @@ pub fn move_folder(
 #[tauri::command]
 pub fn delete_note(slug: String, state: State<AppState>) -> Result<(), String> {
     state.store.delete(&slug).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rename_note(
+    slug: String,
+    title: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    state
+        .store
+        .rename_note(&slug, &title)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rename_folder(
+    path: String,
+    name: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    state
+        .store
+        .rename_folder(&path, &name)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_folder(path: String, state: State<AppState>) -> Result<(), String> {
+    state.store.delete_folder(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -15,11 +15,17 @@ export interface DomRefs {
   saveIndicatorEl: HTMLSpanElement
   toggleModeEl: HTMLButtonElement
   saveBtnEl: HTMLButtonElement
-  deleteBtnEl: HTMLButtonElement
   themeBtnEl: HTMLButtonElement
   confirmModalEl: HTMLDivElement
+  confirmModalTitleEl: HTMLHeadingElement
+  confirmModalMessageEl: HTMLParagraphElement
   cancelDeleteEl: HTMLButtonElement
   confirmDeleteEl: HTMLButtonElement
+  renameModalEl: HTMLDivElement
+  renameModalTitleEl: HTMLHeadingElement
+  renameInputEl: HTMLInputElement
+  cancelRenameEl: HTMLButtonElement
+  confirmRenameEl: HTMLButtonElement
   folderModalEl: HTMLDivElement
   folderModalHintEl: HTMLParagraphElement
   folderNameInputEl: HTMLInputElement
@@ -48,11 +54,17 @@ export function getDomRefs(): DomRefs {
     saveIndicatorEl: el('save-indicator'),
     toggleModeEl: el('toggle-mode-btn'),
     saveBtnEl: el('save-btn'),
-    deleteBtnEl: el('delete-btn'),
     themeBtnEl: el('theme-btn'),
     confirmModalEl: el('confirm-modal'),
+    confirmModalTitleEl: el('confirm-modal-title'),
+    confirmModalMessageEl: el('confirm-modal-message'),
     cancelDeleteEl: el('cancel-delete-btn'),
     confirmDeleteEl: el('confirm-delete-btn'),
+    renameModalEl: el('rename-modal'),
+    renameModalTitleEl: el('rename-modal-title'),
+    renameInputEl: el('rename-input'),
+    cancelRenameEl: el('cancel-rename-btn'),
+    confirmRenameEl: el('confirm-rename-btn'),
     folderModalEl: el('folder-modal'),
     folderModalHintEl: el('folder-modal-hint'),
     folderNameInputEl: el('folder-name-input'),

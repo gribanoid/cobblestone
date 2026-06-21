@@ -32,6 +32,9 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
         .route("/tree", get(api_tree))
         .route("/folders", post(api_create_folder))
         .route("/folders/move", post(api_move_folder))
+        .route("/folders/rename", post(api_rename_folder))
+        .route("/folders/delete", post(api_delete_folder))
+        .route("/notes/rename", post(api_rename_note))
         .route("/search", get(api_search));
 
     let app = Router::new()
@@ -72,6 +75,7 @@ fn ui_dist_dir() -> PathBuf {
 struct NoteInfo {
     slug: String,
     title: String,
+    created: String,
     modified: String,
     size: u64,
     preview: String,
@@ -83,6 +87,7 @@ impl From<&Note> for NoteInfo {
         Self {
             slug: n.name.clone(),
             title: n.title.clone(),
+            created: n.created.clone(),
             modified: n.modified.clone(),
             size: n.size,
             preview: n.preview.clone(),
@@ -177,8 +182,7 @@ async fn api_create(
     if store.exists(&slug) {
         return (StatusCode::CONFLICT, "Note already exists").into_response();
     }
-    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let content = format!("# {}\n\n*Created: {}*\n\n", body.title, date);
+    let content = format!("# {}\n\n", body.title);
     match store.write(&slug, &content) {
         Ok(_) => Json(serde_json::json!({ "slug": slug })).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -238,6 +242,53 @@ async fn api_move_folder(
 ) -> impl IntoResponse {
     match store.move_folder(&body.path, body.dest_parent.as_deref()) {
         Ok(path) => Json(serde_json::json!({ "path": path })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct RenameNoteBody {
+    slug: String,
+    title: String,
+}
+
+async fn api_rename_note(
+    State(store): State<AppState>,
+    Json(body): Json<RenameNoteBody>,
+) -> impl IntoResponse {
+    match store.rename_note(&body.slug, &body.title) {
+        Ok(slug) => Json(serde_json::json!({ "slug": slug })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct RenameFolderBody {
+    path: String,
+    name: String,
+}
+
+async fn api_rename_folder(
+    State(store): State<AppState>,
+    Json(body): Json<RenameFolderBody>,
+) -> impl IntoResponse {
+    match store.rename_folder(&body.path, &body.name) {
+        Ok(path) => Json(serde_json::json!({ "path": path })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct DeleteFolderBody {
+    path: String,
+}
+
+async fn api_delete_folder(
+    State(store): State<AppState>,
+    Json(body): Json<DeleteFolderBody>,
+) -> impl IntoResponse {
+    match store.delete_folder(&body.path) {
+        Ok(_) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
