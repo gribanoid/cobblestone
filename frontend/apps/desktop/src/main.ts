@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 
 import '@cobblestone/ui/styles/main.css'
 import { tauriApi } from '@cobblestone/api/tauri'

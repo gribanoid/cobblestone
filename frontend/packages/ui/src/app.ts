@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 
 import type { CobblestoneApi, NoteGraph, NoteInfo, VaultNode } from '@cobblestone/api'
 

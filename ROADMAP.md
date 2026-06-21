@@ -15,7 +15,7 @@ Items are roughly ordered by priority within each milestone.
 - [x] Desktop app scaffold — Leptos 0.8 CSR + Tauri 2 backend
 - [x] Tauri IPC commands: list, get, save, create, delete, search
 - [x] Tag extraction (`#tag` syntax), full-text search
-- [x] GNU GPL v3 license
+- [x] MIT license
 
 ---
 

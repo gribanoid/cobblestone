@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 import { invoke } from '@tauri-apps/api/core'
 
 import type { CobblestoneApi } from './types'

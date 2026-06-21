@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 export interface NoteInfo {
   slug: string
   title: string

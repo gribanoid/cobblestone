@@ -17,7 +17,7 @@ Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, o
 | **Storage** | Plain `.md` files in `~/.cobblestone` |
 | **Privacy** | 100% local — nothing leaves your machine |
 | **Interfaces** | Terminal CLI · Browser UI · Native desktop app |
-| **License** | GNU GPL v3 — forever free and open |
+| **License** | MIT |
 | **Lock-in** | None — edit files with any text editor |
 | **Cost** | Free, always |
 
@@ -271,6 +271,4 @@ The shared UI uses `CobblestoneApi` — Tauri `invoke` in desktop, REST `/api/*`
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE).
-
-Free as in freedom, forever.
+MIT License — see [LICENSE](LICENSE).

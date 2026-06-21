@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 
 import type { DomRefs } from './dom'
 import { DRAG_THRESHOLD_PX, noteParentFolder } from './utils'
