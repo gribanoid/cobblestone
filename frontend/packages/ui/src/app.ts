@@ -4,6 +4,7 @@ import type { CobblestoneApi, NoteGraph, NoteInfo, VaultNode } from '@cobbleston
 
 import { bindTreeDragDrop, canDropNoteOrFolder, type TreeDrag } from './drag'
 import { getDomRefs } from './dom'
+import { refreshIcons } from './icons'
 import {
   closeFolderModal,
   closeNoteModal,
@@ -27,6 +28,7 @@ import {
   flattenTree,
   noteParentFolder,
   remapPath,
+  stripLeadingHeading,
 } from './utils'
 
 export function createApp(api: CobblestoneApi): void {
@@ -175,7 +177,7 @@ export function createApp(api: CobblestoneApi): void {
       const note = await api.getNote(slug)
       activeSlug = slug
       activeTitle = note.title
-      activeContent = note.content
+      activeContent = stripLeadingHeading(note.content)
       isDirty = false
       isEditing = false
       graph = null
@@ -280,12 +282,29 @@ export function createApp(api: CobblestoneApi): void {
       clearTimeout(saveTimer)
       saveTimer = null
     }
-    const slug = activeSlug
-    const c = contentWithTitle(activeContent, activeTitle)
+    const title = activeTitle.trim()
+    if (!title) {
+      showError(dom, 'Note title cannot be empty')
+      return
+    }
+
+    let slug = activeSlug
+    const listed = notes.find((n) => n.slug === slug)
+    if (listed && listed.title !== title) {
+      try {
+        slug = await api.renameNote(slug, title)
+        activeSlug = slug
+        activeTitle = title
+      } catch (e) {
+        showError(dom, String(e))
+        return
+      }
+    }
+
+    const c = contentWithTitle(activeContent, title)
     try {
       await api.saveNote(slug, c)
       if (activeSlug === slug) {
-        activeContent = c
         isDirty = false
         renderEditorArea(renderCtx())
         await loadNotes()
@@ -469,6 +488,10 @@ export function createApp(api: CobblestoneApi): void {
   })
 
   dom.toggleModeEl.addEventListener('click', () => {
+    if (isEditing) {
+      activeContent = stripLeadingHeading(dom.editorEl.value)
+      dom.editorEl.value = activeContent
+    }
     isEditing = !isEditing
     renderEditorArea(renderCtx())
   })
@@ -537,5 +560,6 @@ export function createApp(api: CobblestoneApi): void {
     }
   })
 
+  refreshIcons()
   loadNotes()
 }

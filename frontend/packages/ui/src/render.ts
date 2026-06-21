@@ -4,10 +4,13 @@ import type { NoteGraph, NoteInfo, VaultNode } from '@cobblestone/api'
 import { marked } from 'marked'
 
 import type { DomRefs } from './dom'
+import { refreshIcons } from './icons'
 import {
   escHtml,
   folderHint,
   noteParentFolder,
+  stripLeadingHeading,
+  bodyForPreview,
 } from './utils'
 
 marked.use({ gfm: true, breaks: false })
@@ -42,7 +45,7 @@ type ContextMenuItem =
   | { kind: 'separator' }
 
 let folderContextMenuEl: HTMLDivElement | null = null
-let dismissFolderContextMenu: (() => void) | null = null
+let dismissFolderContextMenu: ((e: Event) => void) | null = null
 
 export function closeFolderContextMenu() {
   folderContextMenuEl?.remove()
@@ -253,6 +256,7 @@ function renderTreeNode(ctx: RenderCtx, node: VaultNode): string {
     return `
       <div class="tree-note note-item${active}" data-slug="${escHtml(node.slug)}">
         <span class="tree-spacer"></span>
+        <i data-lucide="file-text" class="tree-note-icon"></i>
         <span class="tree-note-title">${escHtml(node.title)}</span>
       </div>`
   }
@@ -265,8 +269,8 @@ function renderTreeNode(ctx: RenderCtx, node: VaultNode): string {
   return `
     <div class="tree-folder-wrap" data-drop-folder="${escHtml(node.path)}">
       <div class="tree-folder${expanded ? ' expanded' : ''}" data-path="${escHtml(node.path)}">
-        <span class="tree-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
-        <span class="tree-folder-icon"></span>
+        <span class="tree-chevron"><i data-lucide="chevron-right"></i></span>
+        <i data-lucide="folder" class="tree-folder-icon"></i>
         <span class="tree-folder-name">${escHtml(node.name)}</span>
       </div>
       ${children}
@@ -295,6 +299,8 @@ export function renderVaultTree(ctx: RenderCtx) {
   dom.noteListEl.querySelectorAll<HTMLDivElement>('.tree-note').forEach((div) => {
     bindNoteCtrlClick(div, div.dataset.slug!, ctx)
   })
+
+  refreshIcons(dom.noteListEl)
 }
 
 export function renderNoteList(ctx: RenderCtx) {
@@ -336,7 +342,9 @@ export function renderEditorArea(ctx: RenderCtx) {
   } else {
     dom.editorEl.classList.add('hidden')
     dom.previewEl.classList.remove('hidden')
-    dom.previewEl.innerHTML = marked.parse(activeContent) as string
+    dom.previewEl.innerHTML = marked.parse(
+      bodyForPreview(activeContent, activeTitle),
+    ) as string
     dom.toggleModeEl.textContent = 'Edit'
     dom.toggleModeEl.className = 'tb-btn active'
   }

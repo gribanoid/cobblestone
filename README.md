@@ -174,6 +174,7 @@ xcode-select --install   # macOS only, if needed
 make desktop         # dev: Vite on :1420 + native window
 npm run dev:desktop  # frontend only, for UI iteration
 make desktop-build   # release bundle
+make app-icons   # cobblestone.svg → Dock + in-app icons
 ```
 
 Release artifacts (after `make desktop-build`):
@@ -181,6 +182,8 @@ Release artifacts (after `make desktop-build`):
 - **macOS** → `target/release/bundle/macos/Cobblestone.app`
 - **Linux** → `target/release/bundle/deb/*.deb`, `*.AppImage`
 - **Windows** → `target/release/bundle/msi/*.msi`
+
+**App icon:** edit `crates/desktop/src-tauri/icons/cobblestone.svg`, then `make app-icons` (or `make desktop-build`). Same sprite is used in the Dock and in the UI.
 
 ---
 

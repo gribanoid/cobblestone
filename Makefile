@@ -1,8 +1,9 @@
-.PHONY: help desktop desktop-build web web-build tui cli test test-desktop fmt npm-install
+.PHONY: help desktop desktop-build web web-build tui cli test test-desktop fmt npm-install app-icons
 
 help:
 	@echo "Cobblestone commands:"
 	@echo "  make npm-install    Install frontend npm dependencies"
+	@echo "  make app-icons      Regenerate icons from cobblestone.svg"
 	@echo "  make desktop        Run the native Tauri desktop app"
 	@echo "  make desktop-build  Build the desktop release bundle"
 	@echo "  make web-build      Build the shared web UI (required before cb web)"
@@ -15,10 +16,13 @@ help:
 npm-install:
 	npm --prefix frontend install
 
-desktop:
+app-icons:
+	python3 scripts/generate-app-icons.py
+
+desktop: app-icons
 	cd crates/desktop/src-tauri && cargo tauri dev
 
-desktop-build:
+desktop-build: app-icons
 	cd crates/desktop/src-tauri && cargo tauri build
 
 web-build:
