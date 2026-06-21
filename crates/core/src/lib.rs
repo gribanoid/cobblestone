@@ -165,8 +165,7 @@ impl Store {
         if new_title.is_empty() {
             bail!("Note title cannot be empty");
         }
-        let new_file = slugify(new_title);
-        bail_if_empty_slug(&new_file, new_title)?;
+        let new_file = filename_from_title(new_title)?;
 
         let new_id = match from_id.rsplit_once('/') {
             Some((parent, _)) => format!("{parent}/{new_file}"),
@@ -265,8 +264,7 @@ impl Store {
 
     /// Build a note id from an optional folder path and a human title.
     pub fn note_id_from_title(&self, folder: Option<&str>, title: &str) -> Result<String> {
-        let file = slugify(title.trim());
-        bail_if_empty_slug(&file, title)?;
+        let file = filename_from_title(title)?;
         match folder {
             Some(folder) if !folder.trim().is_empty() => {
                 let folder = normalize_folder_path(folder)?;
@@ -683,8 +681,7 @@ fn relative_note_id(root: &Path, path: &Path) -> Result<String> {
     Ok(rel.to_string_lossy().replace('\\', "/"))
 }
 
-/// Resolve a note id used in CRUD APIs.
-/// Single-segment names are slugified; paths with `/` are validated as-is.
+/// Resolve a note id used in CRUD APIs (relative path without `.md`, as on disk).
 pub fn resolve_note_id(name: &str) -> Result<String> {
     let name = name.trim().replace('\\', "/");
     if name.is_empty() {
@@ -693,14 +690,8 @@ pub fn resolve_note_id(name: &str) -> Result<String> {
     if name.starts_with('/') {
         bail!("Note id must be relative");
     }
-    if name.contains('/') {
-        validate_path_components(&name)?;
-        Ok(name)
-    } else {
-        let slug = slugify(&name);
-        bail_if_empty_slug(&slug, &name)?;
-        Ok(slug)
-    }
+    validate_path_components(&name)?;
+    Ok(name)
 }
 
 fn normalize_folder_path(path: &str) -> Result<String> {
@@ -724,11 +715,17 @@ fn validate_path_components(path: &str) -> Result<()> {
     Ok(())
 }
 
-fn bail_if_empty_slug(slug: &str, original: &str) -> Result<()> {
-    if slug.is_empty() {
-        bail!("Note name '{}' produces an empty slug — use alphanumeric characters.", original);
+/// Note filename stem (= slug / note id for root notes): same as title, trimmed.
+fn filename_from_title(title: &str) -> Result<String> {
+    let name = title.trim();
+    if name.is_empty() {
+        bail!("Note title cannot be empty");
     }
-    Ok(())
+    if name.contains('/') || name.contains('\\') {
+        bail!("Note title cannot contain path separators");
+    }
+    validate_path_components(name)?;
+    Ok(name.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -855,13 +852,11 @@ mod tests {
     }
 
     #[test]
-    fn store_write_slugifies_name() {
+    fn store_write_preserves_title_as_filename() {
         let (_dir, store) = temp_store();
         store.write("My Note", "content").unwrap();
-        // "My Note" is slugified to "my-note" by the store
-        assert!(store.exists("my-note"));
-        // The file on disk must be "my-note.md", not "My Note.md"
-        assert!(!store.root.join("My Note.md").exists());
+        assert!(store.exists("My Note"));
+        assert!(store.root.join("My Note.md").exists());
     }
 
     #[test]
@@ -899,15 +894,16 @@ mod tests {
     }
 
     #[test]
-    fn store_write_empty_slug_returns_err() {
+    fn store_write_empty_id_returns_err() {
         let (_dir, store) = temp_store();
-        assert!(store.write("!!!", "content").is_err());
+        assert!(store.write("", "content").is_err());
+        assert!(store.write("  ", "content").is_err());
     }
 
     #[test]
-    fn store_read_empty_slug_returns_err() {
+    fn store_read_empty_id_returns_err() {
         let (_dir, store) = temp_store();
-        assert!(store.read("!!!").is_err());
+        assert!(store.read("").is_err());
     }
 
     #[test]
@@ -1051,7 +1047,7 @@ mod tests {
     fn path_for_ends_with_md() {
         let (_dir, store) = temp_store();
         let p = store.path_for("my note");
-        assert!(p.to_str().unwrap().ends_with("my-note.md"));
+        assert!(p.to_str().unwrap().ends_with("my note.md"));
     }
 
     // ── Note::from_path ────────────────────────────────────────────────────
@@ -1170,10 +1166,31 @@ mod tests {
         let (_dir, store) = temp_store();
         store.write("hello", "# Hello\n\nBody").unwrap();
         let new_id = store.rename_note("hello", "World").unwrap();
-        assert_eq!(new_id, "world");
+        assert_eq!(new_id, "World");
         assert!(!store.exists("hello"));
-        let content = store.read("world").unwrap();
+        let content = store.read("World").unwrap();
         assert!(content.starts_with("# World"));
+    }
+
+    #[test]
+    fn note_id_from_title_preserves_spaces_and_case() {
+        let (_dir, store) = temp_store();
+        assert_eq!(
+            store.note_id_from_title(None, "Привет мир").unwrap(),
+            "Привет мир"
+        );
+    }
+
+    #[test]
+    fn distinct_titles_that_would_slugify_to_same_name() {
+        let (_dir, store) = temp_store();
+        let a = store.note_id_from_title(None, "Привет мир").unwrap();
+        let b = store.note_id_from_title(None, "привет-мир").unwrap();
+        assert_ne!(a, b);
+        store.write(&a, "# Привет мир").unwrap();
+        store.write(&b, "# привет-мир").unwrap();
+        assert!(store.exists(&a));
+        assert!(store.exists(&b));
     }
 
     #[test]

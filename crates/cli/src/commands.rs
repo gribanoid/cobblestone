@@ -3,14 +3,14 @@
 use std::io::{self, Write};
 
 use anyhow::{bail, Context, Result};
-use cobblestone_core::{slugify, Store};
+use cobblestone_core::Store;
 
 pub fn cmd_new(store: &Store, title: &str) -> Result<()> {
     let title = title.trim();
     if title.is_empty() {
         bail!("Note title cannot be empty.");
     }
-    let name = slugify(title);
+    let name = store.note_id_from_title(None, title)?;
     if store.exists(&name) {
         bail!("Note '{}' already exists. Use `cb edit {}` to edit it.", name, name);
     }

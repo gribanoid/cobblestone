@@ -249,7 +249,13 @@ fn event_loop(
                         let title = title_buf.trim().to_string();
                         app.mode = UiMode::Normal;
                         if !title.is_empty() {
-                            let name = cobblestone_core::slugify(&title);
+                            let name = match app.store.note_id_from_title(None, &title) {
+                                Ok(n) => n,
+                                Err(e) => {
+                                    app.show_error(e);
+                                    continue;
+                                }
+                            };
                             if app.store.exists(&name) {
                                 app.mode = UiMode::Message {
                                     text: format!("Note '{name}' already exists. Press 'e' to edit."),

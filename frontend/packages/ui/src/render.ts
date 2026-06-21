@@ -9,6 +9,7 @@ import {
   escHtml,
   folderHint,
   noteParentFolder,
+  bodyForPreview,
 } from './utils'
 
 marked.use({ gfm: true, breaks: false })
@@ -234,7 +235,7 @@ export function renderSearchResults(ctx: RenderCtx, items: NoteInfo[]) {
       (n) => `
       <div class="note-item${n.slug === activeSlug ? ' active' : ''}" data-slug="${escHtml(n.slug)}">
         <div class="note-item-title">${escHtml(n.title)}</div>
-        <div class="note-item-meta">${escHtml(n.modified)} · ${escHtml(n.slug)}</div>
+        <div class="note-item-meta">${escHtml(n.modified)}</div>
         ${n.tags.length > 0
           ? `<div class="note-item-tags">${n.tags.map((t) => `<span class="tag">#${escHtml(t)}</span>`).join('')}</div>`
           : ''}
@@ -340,7 +341,9 @@ export function renderEditorArea(ctx: RenderCtx) {
   } else {
     dom.editorEl.classList.add('hidden')
     dom.previewEl.classList.remove('hidden')
-    dom.previewEl.innerHTML = marked.parse(activeContent) as string
+    dom.previewEl.innerHTML = marked.parse(
+      bodyForPreview(activeContent, activeTitle),
+    ) as string
     dom.toggleModeEl.textContent = 'Edit'
     dom.toggleModeEl.className = 'tb-btn active'
   }
@@ -397,7 +400,7 @@ export function renderRightPanel(ctx: RenderCtx) {
         <div><dt>Created</dt><dd>${escHtml(info?.created ?? '')}</dd></div>
         <div><dt>Modified</dt><dd>${escHtml(info?.modified ?? '')}</dd></div>
         <div><dt>Size</dt><dd>${info?.size ?? 0} B</dd></div>
-        <div><dt>Slug</dt><dd>${escHtml(activeSlug)}</dd></div>
+        <div><dt>Path</dt><dd>${escHtml(activeSlug)}.md</dd></div>
       </dl>
     </section>
     <section class="panel-section">
