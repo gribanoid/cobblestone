@@ -8,13 +8,15 @@
 
 Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, or just a fast place to capture thoughts from the terminal.
 
+**Status:** v0.2 in progress — see [ROADMAP.md](ROADMAP.md) for what's shipped and what's next.
+
 ---
 
 ## Why Cobblestone?
 
 | | Cobblestone |
 |---|---|
-| **Storage** | Plain `.md` files in `~/.cobblestone` |
+| **Storage** | Plain `.md` files in `~/.cobblestone` (nested folders supported) |
 | **Privacy** | 100% local — nothing leaves your machine |
 | **Interfaces** | Terminal CLI · Browser UI · Native desktop app |
 | **License** | MIT |
@@ -35,19 +37,6 @@ cargo install --path crates/cli
 
 The binary is installed as **`cb`**.
 
-### Developer shortcuts
-
-From the repository root you can use `make` for the common local flows:
-
-```bash
-make desktop        # run the native Tauri desktop app
-make desktop-build  # build the desktop release bundle
-make web            # run the browser UI
-make tui            # run the terminal UI
-make cli ARGS='ls'  # run any cb command
-make test           # run workspace + desktop tests
-```
-
 ### 2. Create your first note
 
 ```bash
@@ -63,36 +52,49 @@ cb new "My First Note"   # creates the file and opens $EDITOR
 | `cb web` (browser) | Rich editing with live Markdown preview |
 | Desktop app | Native window, always open in the background |
 
+### Developer shortcuts
+
+From the repository root:
+
+```bash
+make npm-install    # install frontend dependencies (once)
+make desktop        # run the native Tauri desktop app
+make desktop-build  # build the desktop release bundle
+make web-build      # build the web UI (required before cb web)
+make web            # run the browser UI
+make tui            # run the terminal UI
+make cli ARGS='ls'  # run any cb command
+make test           # run workspace + desktop tests
+```
+
 ---
 
 ## CLI — `cb`
 
-All your notes at a glance, right in the terminal.
-
 ```bash
 # Basic usage
-cb                        # list all notes
+cb                        # list all notes (recursive, flat)
 cb new "Shopping List"    # create a note (opens $EDITOR)
-cb new "Todo"             # works great as a todo list too
 cb show shopping-list     # pretty-print a note to stdout
+cb show ideas/project     # nested notes use path-style slugs
 cb edit shopping-list     # open a note in $EDITOR
 cb rm  shopping-list      # delete a note (asks for confirmation)
 cb search "rust async"    # full-text search across all notes
 
 # Directory listing
 cb ls                     # same as cb — lists all notes
-cb ls ideas/              # list a subdirectory
+cb ls ideas/              # list files and folders in a subdirectory
 
 # Web UI
 cb web                    # opens http://127.0.0.1:3000
 cb web --port 8080        # custom port
 ```
 
-### Running the interactive TUI
+Notes in subfolders appear in `cb ls` and search with their full slug (e.g. `ideas/project-alpha`).
 
-```bash
-cb -i
-```
+### Interactive TUI — `cb -i`
+
+Flat list of all notes (newest first) with live preview. Folder tree navigation is on the [roadmap](ROADMAP.md).
 
 ```
 ┌── Notes (3) ──────┬── Shopping List ─────────────────────────────────┐
@@ -114,117 +116,91 @@ cb -i
 | `k` / `↑` | Move up |
 | `n` | Create new note |
 | `e` | Edit selected note in `$EDITOR` |
-| `D` | Delete note (with confirmation dialog) |
+| `D` | Delete note (with confirmation) |
 | `/` | Live search / filter |
 | `^D` / `^U` | Scroll preview pane |
 | `q` | Quit |
 
 ---
 
-## Web UI — `cb web`
+## Graphical UI — web & desktop
 
-A browser-based editor with live Markdown preview, dark/light theme, and auto-save.
+Web (`cb web`) and the desktop app share the same **TypeScript** UI (`@cobblestone/ui`). Both talk to `cobblestone-core` — REST `/api/*` in the browser, Tauri `invoke` on desktop.
 
-```bash
-make web-build   # build shared web UI first
-make web
-# or: cargo run -p cb -- web
-```
+**Features:**
 
-Open `http://127.0.0.1:3000` if the browser doesn't open automatically.
+- Nested file tree with expand/collapse
+- Folders — create, rename, move, delete (with confirmation)
+- Notes — create, rename, move, delete; drag-and-drop in the tree
+- Context menus (right-click on notes and folders)
+- Search, edit/preview toggle, autosave
+- Dark/light theme
+- Info panel — tags, metadata, outgoing wikilinks, backlinks (clickable)
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+S` | Save current note |
-| `n` | New note (when not in editor) |
-| `e` | Switch to editor mode |
-| `/` | Focus search bar |
-| `Tab` (in editor) | Insert 2 spaces |
-| `Esc` | Close modal / blur input |
-
----
-
-## Desktop app — TypeScript + Tauri
-
-A native desktop window built with **TypeScript**, **Vite**, and **Tauri 2** — lightweight, no Electron, no browser required. The UI talks to the same `cobblestone-core` storage layer as the CLI and web UI.
-
-### Prerequisites (one-time setup)
-
-```bash
-# 1. Node.js 18+ and npm
-node --version
-npm --version
-
-# 2. Install frontend dependencies (from repo root)
-npm install
-
-# 3. Install Tauri CLI v2
-cargo install tauri-cli --version "^2.0.0" --locked
-
-# 4. macOS only — install Xcode Command Line Tools if not present
-xcode-select --install
-```
-
-### Run in development
-
-From the repository root:
-
-```bash
-make desktop
-```
-
-This starts Vite (hot-reload on port 1420) and opens the native window automatically.
-
-You can also run the frontend alone for quick UI iteration:
-
-```bash
-npm run dev:desktop
-```
-
-### Build a release binary
-
-```bash
-make desktop-build
-```
-
-Or manually:
-
-```bash
-cd crates/desktop/src-tauri
-cargo tauri build
-```
-
-Output artifacts:
-- **macOS** → `target/release/bundle/macos/Cobblestone.app`
-- **Linux**  → `target/release/bundle/deb/*.deb` and `*.AppImage`
-- **Windows** → `target/release/bundle/msi/*.msi`
-
-### Desktop shortcuts
+Wikilinks (`[[Note Title]]`) are parsed in core and shown in the info panel. Clicking a link in the **preview body** is [planned](ROADMAP.md).
 
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+S` / `⌘S` | Save current note |
 | `Tab` (in editor) | Insert 2 spaces |
-| `Esc` | Close delete confirmation dialog |
+| `Esc` | Close modal or context menu |
 
-Features: sidebar note list, search, edit/preview toggle, autosave, metadata panel (tags, wikilinks, backlinks).
+### Web — `cb web`
+
+```bash
+make npm-install     # once
+make web-build       # build the shared UI into frontend/apps/web/dist
+make web             # or: cargo run -p cb -- web
+```
+
+Open `http://127.0.0.1:3000` if the browser doesn't open automatically.
+
+### Desktop — TypeScript + Tauri 2
+
+Native window via **Vite** and **Tauri 2** — no Electron, no browser required.
+
+**Prerequisites (one-time):**
+
+```bash
+node --version       # 18+
+make npm-install
+cargo install tauri-cli --version "^2.0.0" --locked
+xcode-select --install   # macOS only, if needed
+```
+
+**Run / build:**
+
+```bash
+make desktop         # dev: Vite on :1420 + native window
+npm run dev:desktop  # frontend only, for UI iteration
+make desktop-build   # release bundle
+```
+
+Release artifacts (after `make desktop-build`):
+
+- **macOS** → `target/release/bundle/macos/Cobblestone.app`
+- **Linux** → `target/release/bundle/deb/*.deb`, `*.AppImage`
+- **Windows** → `target/release/bundle/msi/*.msi`
 
 ---
 
 ## Storage format
 
-Notes are plain UTF-8 Markdown files — readable and editable with any tool:
+Notes are plain UTF-8 Markdown — readable and editable with any tool:
 
 ```
 ~/.cobblestone/
   shopping-list.md
-  project-ideas.md
-  daily-journal.md
+  ideas/
+    project-alpha.md
+  journal/
+    2026-05-27.md
 ```
 
-- **Title** — first `# Heading` in the file becomes the display title
-- **Slug** — derived from the title: `"My Note"` → `my-note.md`
-- **Tags** — use `#hashtag` anywhere in the body text
+- **Title** — first `# Heading` in the file
+- **Slug** — derived from the title: `"My Note"` → `my-note`; nested notes use paths like `ideas/my-note`
+- **Tags** — `#hashtag` in body text (not in headings)
+- **Wikilinks** — `[[Other Note]]` for cross-references (resolved in the info panel)
 - **Sync** — works with Git, Syncthing, rsync, or any file sync tool
 
 ### Example note
@@ -238,7 +214,7 @@ Notes are plain UTF-8 Markdown files — readable and editable with any tool:
 - [ ] Bread
 - [x] Coffee  #groceries
 
-> Tip: check store opens at 09:00
+Related: [[Meal Planning]]
 ```
 
 ---
@@ -247,25 +223,22 @@ Notes are plain UTF-8 Markdown files — readable and editable with any tool:
 
 ```
 cobblestone/
-  package.json            # npm workspaces (shared frontend)
-  tsconfig.base.json
   frontend/
     packages/
       api/                # CobblestoneApi types + web/tauri adapters
-      ui/                 # shared UI (CSS, app logic, components)
+      ui/                 # shared UI (CSS, app logic, rendering)
     apps/
       desktop/            # Vite entry → Tauri window
       web/                # Vite entry → axum static files
-  Cargo.toml              # workspace (core, cli, desktop backend)
-  Makefile                # make desktop / web / tui / test
+  Makefile
   crates/
-    core/                 # cobblestone-core — shared storage library
-    cli/                  # cb binary (clap · ratatui · axum)
+    core/                 # cobblestone-core — storage, search, tree, wikilink graph
+    cli/                  # cb binary (clap · ratatui · axum web server)
     desktop/
-      src-tauri/          # Tauri 2 native backend (Rust IPC commands)
+      src-tauri/          # Tauri 2 backend (thin IPC over core)
 ```
 
-The shared UI uses `CobblestoneApi` — Tauri `invoke` in desktop, REST `/api/*` in web. All interfaces share the same Markdown files in `~/.cobblestone`.
+All interfaces read and write the same Markdown files. The graphical UI uses `CobblestoneApi` — thin adapters over the same `Store` methods (`list_tree`, `note_graph`, folder CRUD, etc.).
 
 ---
 

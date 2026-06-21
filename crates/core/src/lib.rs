@@ -315,6 +315,70 @@ impl Store {
         results.sort_by(|a, b| b.0.modified_raw.cmp(&a.0.modified_raw));
         Ok(results)
     }
+
+    /// Outgoing wikilinks and backlinks for a note (for graph / info panels).
+    pub fn note_graph(&self, slug: &str) -> Result<NoteGraph> {
+        let id = resolve_note_id(slug)?;
+        let notes = self.list_notes()?;
+        let current = self.read(&id)?;
+
+        let outgoing_titles = extract_wikilinks(&current);
+        let outgoing = notes
+            .iter()
+            .filter(|note| {
+                outgoing_titles.iter().any(|link| {
+                    link.eq_ignore_ascii_case(&note.title) || link.eq_ignore_ascii_case(&note.name)
+                })
+            })
+            .map(|note| LinkedNote {
+                slug: note.name.clone(),
+                title: note.title.clone(),
+            })
+            .collect();
+
+        let current_title = notes
+            .iter()
+            .find(|note| note.name == id)
+            .map(|note| note.title.clone())
+            .unwrap_or_else(|| id.clone());
+        let current_markers = [format!("[[{current_title}]]"), format!("[[{id}]]")];
+
+        let backlinks = notes
+            .iter()
+            .filter(|note| note.name != id)
+            .filter_map(|note| {
+                let content = self.read(&note.name).ok()?;
+                let has_backlink = current_markers
+                    .iter()
+                    .any(|marker| content.to_lowercase().contains(&marker.to_lowercase()));
+                has_backlink.then(|| LinkedNote {
+                    slug: note.name.clone(),
+                    title: note.title.clone(),
+                })
+            })
+            .collect();
+
+        Ok(NoteGraph {
+            outgoing,
+            backlinks,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Note graph (wikilinks)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkedNote {
+    pub slug: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteGraph {
+    pub outgoing: Vec<LinkedNote>,
+    pub backlinks: Vec<LinkedNote>,
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +568,27 @@ pub fn extract_tags(content: &str) -> Vec<String> {
         }
     }
     tags
+}
+
+/// Extract `[[wikilink]]` targets from note content (deduplicated, in order).
+pub fn extract_wikilinks(content: &str) -> Vec<String> {
+    let mut links = Vec::new();
+    let mut rest = content;
+
+    while let Some(start) = rest.find("[[") {
+        rest = &rest[start + 2..];
+        let Some(end) = rest.find("]]") else {
+            break;
+        };
+
+        let title = rest[..end].trim();
+        if !title.is_empty() && !links.iter().any(|existing: &String| existing == title) {
+            links.push(title.to_string());
+        }
+        rest = &rest[end + 2..];
+    }
+
+    links
 }
 
 // ---------------------------------------------------------------------------
@@ -1109,5 +1194,27 @@ mod tests {
         store.write("tmp/a", "# A").unwrap();
         store.delete_folder("tmp").unwrap();
         assert!(!store.root.join("tmp").exists());
+    }
+
+    // ── wikilinks / note graph ───────────────────────────────────────────────
+
+    #[test]
+    fn extract_wikilinks_dedupes() {
+        let links = extract_wikilinks("See [[Foo]] and [[Foo]] again.");
+        assert_eq!(links, vec!["Foo".to_string()]);
+    }
+
+    #[test]
+    fn note_graph_outgoing_and_backlinks() {
+        let (_dir, store) = temp_store();
+        store.write("alpha", "# Alpha\n\nSee [[Beta]].").unwrap();
+        store.write("beta", "# Beta\n\nLinks to [[Alpha]].").unwrap();
+        store.write("lonely", "# Lonely\n\nNo links.").unwrap();
+
+        let graph = store.note_graph("alpha").unwrap();
+        assert_eq!(graph.outgoing.len(), 1);
+        assert_eq!(graph.outgoing[0].slug, "beta");
+        assert_eq!(graph.backlinks.len(), 1);
+        assert_eq!(graph.backlinks[0].slug, "beta");
     }
 }

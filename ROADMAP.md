@@ -2,9 +2,11 @@
 
 Items are roughly ordered by priority within each milestone.
 
+**Current focus:** v0.2 — polish and power-user features. See also [README](README.md) for what ships today.
+
 ---
 
-## ✅ v0.1 — Foundation *(current)*
+## ✅ v0.1 — Foundation
 
 - [x] Plain Markdown storage in `~/.cobblestone`
 - [x] `cobblestone-core` shared library (workspace crate)
@@ -12,29 +14,40 @@ Items are roughly ordered by priority within each milestone.
 - [x] `-i` flag — full-screen TUI (ratatui + crossterm)
 - [x] `cb web` — embedded local web server (axum) with browser UI
 - [x] Web UI — dark/light theme, live Markdown preview, auto-save
-- [x] Desktop app scaffold — Leptos 0.8 CSR + Tauri 2 backend
+- [x] Desktop app scaffold — TypeScript + Vite + Tauri 2 backend
 - [x] Tauri IPC commands: list, get, save, create, delete, search
 - [x] Tag extraction (`#tag` syntax), full-text search
 - [x] MIT license
 
 ---
 
-## 🔧 v0.2 — Polish & Power User
+## 🔧 v0.2 — Polish & Power User *(current)*
 
-- [x] **Desktop app launch** — functional Leptos UI with Tauri IPC wired up
+### Shipped
+
+- [x] **Shared TypeScript UI** — `@cobblestone/ui` used by web and desktop
+- [x] **Desktop app launch** — functional TypeScript UI with Tauri IPC wired up
 - [x] **Desktop note CRUD** — list, open, create, edit, save, delete
 - [x] **Desktop backend search** — sidebar uses the shared storage search path
 - [x] **Desktop note metadata panel** — tags, size, modified date, links, backlinks
-- [x] **Delete confirmation in desktop** — destructive action asks before removing a note
+- [x] **Delete confirmation** — destructive actions ask before removing notes or folders
+- [x] **Nested file tree** — hierarchical folders and notes in web & desktop
+- [x] **File operations in graphical UI** — create, rename, move, delete notes and folders; drag-and-drop; context menus
+- [x] **Nested storage in core** — subdirectories, `list_tree()`, move/rename/delete folder APIs
+- [x] **Wikilink graph in core** — `extract_wikilinks()`, `Store::note_graph()` shared by web API and Tauri
+- [x] **Wikilinks info panel** — outgoing links and backlinks shown in the side panel (clickable)
+
+### Next up
+
 - [ ] **Workspace folder selection** — open an existing Markdown folder instead of only `~/.cobblestone`
-- [ ] **Nested file tree** — display folders and Markdown files hierarchically
-- [ ] **Wikilinks** — `[[Note Title]]` creates clickable cross-note links
-- [ ] **Backlinks panel polish** — open backlink targets and highlight matching lines
+- [ ] **Wikilinks in preview** — click `[[Note Title]]` in the rendered Markdown body
+- [ ] **Backlink line highlights** — highlight lines that mention the current note
 - [ ] **Daily note** — `cb today` opens/creates a note for today's date
 - [ ] **Note templates** — `cb new --template meeting`
 - [ ] **Pinned notes** — appear at top of list
 - [ ] **Configurable storage** — `CB_DIR` env var or `~/.config/cobblestone/config.toml`
 - [ ] **Shell completions** — bash, zsh, fish via `clap_complete`
+- [ ] **TUI folder tree** — hierarchical navigation in `cb -i` (today: flat list of all notes)
 - [ ] **TUI inline editing** — edit without leaving `cb -i`
 - [ ] **Mouse support** in TUI
 
@@ -42,7 +55,7 @@ Items are roughly ordered by priority within each milestone.
 
 ## 🖥 v0.3 — Desktop App Full Feature
 
-- [ ] **Right information panel** — backlinks, tags, metadata, and outgoing links
+- [x] **Right information panel** — backlinks, tags, metadata, and outgoing links *(shipped in v0.2)*
 - [ ] **Native file watcher** — reload note list when files change on disk
 - [ ] **Graph view** — force-directed link graph between notes
 - [ ] **Split editor/preview** — side-by-side in desktop window
@@ -56,29 +69,32 @@ Items are roughly ordered by priority within each milestone.
 
 ## 🧱 Architecture Blueprint
 
-Pulled forward from `cobblestone-arch`; these are the product constraints for the desktop app:
+Product constraints for the desktop app (longer-term):
 
-- [ ] **Local folder as workspace** — notes are regular `.md` files that can be opened, moved, synced, or backed up outside the app
-- [ ] **File operations** — create, rename, move, delete notes and folders with confirmation for destructive actions
-- [ ] **External change detection** — update the UI when files change on disk
-- [ ] **Markdown-first editor** — syntax highlighting, preview, autosave, shortcuts, attachments, and frontmatter metadata
-- [ ] **Connected notes** — wikilinks, autocomplete, backlinks, broken-link detection, renamed-link handling, and unlinked mentions
-- [ ] **Search and navigation** — full-text search, quick switcher, filters by folder/tag/date/type, recent notes, and bookmarks
-- [ ] **Organization** — tags, favorites, daily notes, templates, and global tag list
-- [ ] **Knowledge graph** — global graph, local graph, filters, and open-from-node navigation
-- [ ] **Portability** — import existing Markdown folders, export notes/folders to HTML/PDF, and remain compatible with Git or folder sync tools
-- [ ] **Settings** — workspace path, shortcuts, theme, font size, templates, daily-note format, and search-index management
+| Area | Status |
+|------|--------|
+| **Local folder as workspace** | Planned — vault path still defaults to `~/.cobblestone` |
+| **File operations** | Done — CRUD for notes and folders in core + graphical UI |
+| **External change detection** | Planned |
+| **Markdown-first editor** | Partial — preview, autosave, shortcuts; no syntax highlighting or attachments yet |
+| **Connected notes** | Partial — wikilink parse, graph, backlinks panel; no autocomplete, broken-link hints, or preview navigation |
+| **Search and navigation** | Partial — full-text search; no quick switcher, filters, or bookmarks |
+| **Organization** | Partial — tags; no favorites, daily notes, templates, or global tag list |
+| **Knowledge graph** | Planned — local note graph exists; no global graph view yet |
+| **Portability** | Planned — import/export, HTML/PDF |
+| **Settings** | Planned — workspace path, shortcuts, theme, templates |
 
 ---
 
 ## 🌐 v0.4 — Web UI Enhancements
 
 - [ ] **CodeMirror editor** — syntax highlighting, bracket matching
-- [ ] **Real-time wikilink navigation** — `[[note]]` clickable in preview
-- [ ] **Full-text search** with highlighted matches
-- [ ] **Folder/category support** — subdirectories in storage
+- [ ] **Search match highlights** — highlight matching lines in search results
+- [x] **Folder/category support** — subdirectories in storage *(shipped in v0.2)*
 - [ ] **PWA manifest** — installable as desktop app from browser
 - [ ] **Offline-first service worker**
+
+*(Wikilink navigation in preview moved to v0.2 — shared UI work.)*
 
 ---
 

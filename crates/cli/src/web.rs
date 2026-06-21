@@ -103,18 +103,6 @@ struct NoteContent {
     content: String,
 }
 
-#[derive(Serialize)]
-struct LinkedNote {
-    slug: String,
-    title: String,
-}
-
-#[derive(Serialize)]
-struct NoteGraph {
-    outgoing: Vec<LinkedNote>,
-    backlinks: Vec<LinkedNote>,
-}
-
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -315,9 +303,9 @@ async fn api_graph(
     State(store): State<AppState>,
     Path(slug): Path<String>,
 ) -> impl IntoResponse {
-    match note_graph(&store, &slug) {
+    match store.note_graph(&slug) {
         Ok(graph) => Json(graph).into_response(),
-        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
     }
 }
 
@@ -331,81 +319,4 @@ fn title_from_content(content: &str, fallback: &str) -> String {
         .find(|l| l.starts_with("# "))
         .map(|l| l.trim_start_matches("# ").to_string())
         .unwrap_or_else(|| fallback.to_string())
-}
-
-fn note_graph(store: &Store, slug: &str) -> Result<NoteGraph, String> {
-    let notes = store.list_notes().map_err(|e| e.to_string())?;
-    let current = store.read(slug).map_err(|e| e.to_string())?;
-
-    let outgoing_titles = extract_wikilinks(&current);
-    let outgoing = notes
-        .iter()
-        .filter(|note| {
-            outgoing_titles.iter().any(|link| {
-                link.eq_ignore_ascii_case(&note.title) || link.eq_ignore_ascii_case(&note.name)
-            })
-        })
-        .map(|note| LinkedNote {
-            slug: note.name.clone(),
-            title: note.title.clone(),
-        })
-        .collect();
-
-    let current_title = notes
-        .iter()
-        .find(|note| note.name == slug)
-        .map(|note| note.title.clone())
-        .unwrap_or_else(|| slug.to_string());
-    let current_markers = [format!("[[{current_title}]]"), format!("[[{slug}]]")];
-
-    let backlinks = notes
-        .iter()
-        .filter(|note| note.name != slug)
-        .filter_map(|note| {
-            let content = store.read(&note.name).ok()?;
-            let has_backlink = current_markers
-                .iter()
-                .any(|marker| content.to_lowercase().contains(&marker.to_lowercase()));
-            has_backlink.then(|| LinkedNote {
-                slug: note.name.clone(),
-                title: note.title.clone(),
-            })
-        })
-        .collect();
-
-    Ok(NoteGraph {
-        outgoing,
-        backlinks,
-    })
-}
-
-fn extract_wikilinks(content: &str) -> Vec<String> {
-    let mut links = Vec::new();
-    let mut rest = content;
-
-    while let Some(start) = rest.find("[[") {
-        rest = &rest[start + 2..];
-        let Some(end) = rest.find("]]") else {
-            break;
-        };
-
-        let title = rest[..end].trim();
-        if !title.is_empty() && !links.iter().any(|existing: &String| existing == title) {
-            links.push(title.to_string());
-        }
-        rest = &rest[end + 2..];
-    }
-
-    links
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_wikilinks_dedupes() {
-        let links = extract_wikilinks("See [[Foo]] and [[Foo]] again.");
-        assert_eq!(links, vec!["Foo".to_string()]);
-    }
 }
