@@ -10,10 +10,8 @@ pub fn run() {
     let store = Store::init().expect("Failed to initialise storage at ~/.cobblestone");
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .manage(AppState { store })
         .invoke_handler(tauri::generate_handler![
-            commands::notes::list_notes,
             commands::notes::list_tree,
             commands::notes::get_note,
             commands::notes::save_note,

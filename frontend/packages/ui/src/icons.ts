@@ -19,7 +19,7 @@ const icons = {
   SunMoon,
 }
 
-/** Replace `[data-lucide]` placeholders with Lucide SVG icons (MIT). */
+/** Replace `[data-lucide]` placeholders with Lucide SVG icons (ISC). */
 export function refreshIcons(root: ParentNode = document): void {
   createIcons({
     icons,

@@ -16,8 +16,6 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-cobblestone-core    = { path = "../../core" }
-tauri               = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-serde               = { version = "1", features = ["derive"] }
-chrono              = "0.4"
+cobblestone-core = { path = "../../core" }
+tauri              = { version = "2", features = [] }
+serde              = { version = "1", features = ["derive"] }

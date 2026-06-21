@@ -45,7 +45,6 @@ export type VaultNode =
     }
 
 export interface CobblestoneApi {
-  listNotes(): Promise<NoteInfo[]>
   listTree(): Promise<VaultNode[]>
   getNote(slug: string): Promise<NoteContent>
   saveNote(slug: string, content: string): Promise<void>

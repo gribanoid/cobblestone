@@ -22,7 +22,6 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
     let ui_dist = ui_dist_dir();
 
     let api = Router::new()
-        .route("/notes", get(api_list))
         .route("/notes", put(api_create))
         .route("/notes/{slug}", get(api_get))
         .route("/notes/{slug}", post(api_update))
@@ -106,16 +105,6 @@ struct NoteContent {
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
-
-async fn api_list(State(store): State<AppState>) -> impl IntoResponse {
-    match store.list_notes() {
-        Ok(notes) => {
-            let list: Vec<NoteInfo> = notes.iter().map(NoteInfo::from).collect();
-            (StatusCode::OK, Json(list)).into_response()
-        }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
-}
 
 async fn api_tree(State(store): State<AppState>) -> impl IntoResponse {
     match store.list_tree() {

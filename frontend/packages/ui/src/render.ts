@@ -9,8 +9,6 @@ import {
   escHtml,
   folderHint,
   noteParentFolder,
-  stripLeadingHeading,
-  bodyForPreview,
 } from './utils'
 
 marked.use({ gfm: true, breaks: false })
@@ -342,9 +340,7 @@ export function renderEditorArea(ctx: RenderCtx) {
   } else {
     dom.editorEl.classList.add('hidden')
     dom.previewEl.classList.remove('hidden')
-    dom.previewEl.innerHTML = marked.parse(
-      bodyForPreview(activeContent, activeTitle),
-    ) as string
+    dom.previewEl.innerHTML = marked.parse(activeContent) as string
     dom.toggleModeEl.textContent = 'Edit'
     dom.toggleModeEl.className = 'tb-btn active'
   }

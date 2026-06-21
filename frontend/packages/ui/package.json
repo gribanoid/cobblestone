@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@cobblestone/api": "*",
-    "lucide": "^1.21.0",
-    "marked": "^15"
+    "marked": "^15",
+    "lucide": "^1.21.0"
   }
 }

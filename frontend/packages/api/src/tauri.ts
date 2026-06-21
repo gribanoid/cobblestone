@@ -5,8 +5,6 @@ import { invoke } from '@tauri-apps/api/core'
 import type { CobblestoneApi } from './types'
 
 export const tauriApi: CobblestoneApi = {
-  listNotes: () => invoke('list_notes'),
-
   listTree: () => invoke('list_tree'),
 
   getNote: (slug) => invoke('get_note', { slug }),

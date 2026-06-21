@@ -30,8 +30,6 @@ async function api<T>(
 }
 
 export const webApi: CobblestoneApi = {
-  listNotes: () => api<NoteInfo[]>('GET', '/api/notes'),
-
   listTree: () => api<VaultNode[]>('GET', '/api/tree'),
 
   getNote: (slug) => api<NoteContent>('GET', `/api/notes/${encodeURIComponent(slug)}`),

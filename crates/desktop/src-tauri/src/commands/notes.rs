@@ -39,15 +39,6 @@ pub struct NoteContent {
 }
 
 #[tauri::command]
-pub fn list_notes(state: State<AppState>) -> Result<Vec<NoteInfo>, String> {
-    state
-        .store
-        .list_notes()
-        .map(|notes| notes.iter().map(NoteInfo::from).collect())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub fn get_note(slug: String, state: State<AppState>) -> Result<NoteContent, String> {
     let content = state.store.read(&slug).map_err(|e| e.to_string())?;
     let title = content

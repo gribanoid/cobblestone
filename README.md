@@ -4,11 +4,47 @@
 
 **The open-source knowledge base and note manager for your private thoughts.**
 
-> Your notes are yours. Cobblestone stores everything locally as plain Markdown files — on your device, in your directory, under your control. No cloud. No accounts. No subscriptions.
+> Your notes are yours. Cobblestone stores everything locally as plain Markdown files — on your device, in your directory, under your control.
 
-Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, or just a fast place to capture thoughts from the terminal.
+Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, or a fast place to capture thoughts.
 
 **Status:** v0.2 in progress — see [ROADMAP.md](ROADMAP.md) for what's shipped and what's next.
+
+---
+
+## Quick start — desktop
+
+Native window via **Vite** and **Tauri 2** — no Electron, no browser required.
+
+```bash
+git clone https://github.com/yourname/cobblestone
+cd cobblestone
+```
+
+**Prerequisites (one-time):**
+
+```bash
+node --version       # 18+
+make npm-install
+cargo install tauri-cli --version "^2.0.0" --locked
+xcode-select --install   # macOS only, if needed
+```
+
+**Run / build:**
+
+```bash
+make desktop         # dev: Vite on :1420 + native window
+make desktop-build   # release bundle
+npm run dev:desktop  # frontend only, for UI iteration
+```
+
+Release artifacts (after `make desktop-build`):
+
+- **macOS** → `target/release/bundle/macos/Cobblestone.app`
+- **Linux** → `target/release/bundle/deb/*.deb`, `*.AppImage`
+- **Windows** → `target/release/bundle/msi/*.msi`
+
+Run `make help` for all build and dev commands.
 
 ---
 
@@ -18,114 +54,16 @@ Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, o
 |---|---|
 | **Storage** | Plain `.md` files in `~/.cobblestone` (nested folders supported) |
 | **Privacy** | 100% local — nothing leaves your machine |
-| **Interfaces** | Terminal CLI · Browser UI · Native desktop app |
+| **Interfaces** | Native desktop app · Browser UI · Terminal CLI |
 | **License** | MIT |
 | **Lock-in** | None — edit files with any text editor |
 | **Cost** | Free, always |
 
 ---
 
-## Quick start
+## Graphical UI
 
-### 1. Install the CLI
-
-```bash
-git clone https://github.com/yourname/cobblestone
-cd cobblestone
-cargo install --path crates/cli
-```
-
-The binary is installed as **`cb`**.
-
-### 2. Create your first note
-
-```bash
-cb new "My First Note"   # creates the file and opens $EDITOR
-```
-
-### 3. Pick your interface
-
-| Interface | When to use |
-|-----------|-------------|
-| `cb` (terminal) | Fast access from any shell, scripting, SSH |
-| `cb -i` (TUI) | Keyboard-driven full-screen experience |
-| `cb web` (browser) | Rich editing with live Markdown preview |
-| Desktop app | Native window, always open in the background |
-
-### Developer shortcuts
-
-From the repository root:
-
-```bash
-make npm-install    # install frontend dependencies (once)
-make desktop        # run the native Tauri desktop app
-make desktop-build  # build the desktop release bundle
-make web-build      # build the web UI (required before cb web)
-make web            # run the browser UI
-make tui            # run the terminal UI
-make cli ARGS='ls'  # run any cb command
-make test           # run workspace + desktop tests
-```
-
----
-
-## CLI — `cb`
-
-```bash
-# Basic usage
-cb                        # list all notes (recursive, flat)
-cb new "Shopping List"    # create a note (opens $EDITOR)
-cb show shopping-list     # pretty-print a note to stdout
-cb show ideas/project     # nested notes use path-style slugs
-cb edit shopping-list     # open a note in $EDITOR
-cb rm  shopping-list      # delete a note (asks for confirmation)
-cb search "rust async"    # full-text search across all notes
-
-# Directory listing
-cb ls                     # same as cb — lists all notes
-cb ls ideas/              # list files and folders in a subdirectory
-
-# Web UI
-cb web                    # opens http://127.0.0.1:3000
-cb web --port 8080        # custom port
-```
-
-Notes in subfolders appear in `cb ls` and search with their full slug (e.g. `ideas/project-alpha`).
-
-### Interactive TUI — `cb -i`
-
-Flat list of all notes (newest first) with live preview. Folder tree navigation is on the [roadmap](ROADMAP.md).
-
-```
-┌── Notes (3) ──────┬── Shopping List ─────────────────────────────────┐
-│ > Shopping List   │                                                   │
-│   2026-05-27      │  # Shopping List                                  │
-│                   │                                                   │
-│   Project Ideas   │  - [ ] Milk                                       │
-│   2026-05-26      │  - [ ] Bread                                      │
-│                   │  - [x] Coffee                                     │
-│   Daily Journal   │                                                   │
-│   2026-05-25      │  *Last updated: 2026-05-27*                       │
-└───────────────────┴───────────────────────────────────────────────────┘
- q:quit  n:new  e:edit  D:delete  /:search  j/k:navigate  ^D/^U:scroll
-```
-
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `n` | Create new note |
-| `e` | Edit selected note in `$EDITOR` |
-| `D` | Delete note (with confirmation) |
-| `/` | Live search / filter |
-| `^D` / `^U` | Scroll preview pane |
-| `q` | Quit |
-
----
-
-## Graphical UI — web & desktop
-
-Web (`cb web`) and the desktop app share the same **TypeScript** UI (`@cobblestone/ui`). Both talk to `cobblestone-core` — REST `/api/*` in the browser, Tauri `invoke` on desktop.
+The desktop app and browser UI share the same **TypeScript** UI (`@cobblestone/ui`). Both talk to `cobblestone-core` — Tauri `invoke` on desktop, REST `/api/*` in the browser.
 
 **Features:**
 
@@ -154,36 +92,6 @@ make web             # or: cargo run -p cb -- web
 ```
 
 Open `http://127.0.0.1:3000` if the browser doesn't open automatically.
-
-### Desktop — TypeScript + Tauri 2
-
-Native window via **Vite** and **Tauri 2** — no Electron, no browser required.
-
-**Prerequisites (one-time):**
-
-```bash
-node --version       # 18+
-make npm-install
-cargo install tauri-cli --version "^2.0.0" --locked
-xcode-select --install   # macOS only, if needed
-```
-
-**Run / build:**
-
-```bash
-make desktop         # dev: Vite on :1420 + native window
-npm run dev:desktop  # frontend only, for UI iteration
-make desktop-build   # release bundle
-make app-icons   # cobblestone.svg → Dock + in-app icons
-```
-
-Release artifacts (after `make desktop-build`):
-
-- **macOS** → `target/release/bundle/macos/Cobblestone.app`
-- **Linux** → `target/release/bundle/deb/*.deb`, `*.AppImage`
-- **Windows** → `target/release/bundle/msi/*.msi`
-
-**App icon:** edit `crates/desktop/src-tauri/icons/cobblestone.svg`, then `make app-icons` (or `make desktop-build`). Same sprite is used in the Dock and in the UI.
 
 ---
 
@@ -242,6 +150,66 @@ cobblestone/
 ```
 
 All interfaces read and write the same Markdown files. The graphical UI uses `CobblestoneApi` — thin adapters over the same `Store` methods (`list_tree`, `note_graph`, folder CRUD, etc.).
+
+---
+
+## CLI — `cb`
+
+Terminal interface for scripting, SSH, and quick shell access.
+
+```bash
+cargo install --path crates/cli
+```
+
+```bash
+# Basic usage
+cb                        # list all notes (recursive, flat)
+cb new "Shopping List"    # create a note (opens $EDITOR)
+cb show shopping-list     # pretty-print a note to stdout
+cb show ideas/project     # nested notes use path-style slugs
+cb edit shopping-list     # open a note in $EDITOR
+cb rm  shopping-list      # delete a note (asks for confirmation)
+cb search "rust async"    # full-text search across all notes
+
+# Directory listing
+cb ls                     # same as cb — lists all notes
+cb ls ideas/              # list files and folders in a subdirectory
+
+# Web UI
+cb web                    # opens http://127.0.0.1:3000
+cb web --port 8080        # custom port
+```
+
+Notes in subfolders appear in `cb ls` and search with their full slug (e.g. `ideas/project-alpha`).
+
+### Interactive TUI — `cb -i`
+
+Flat list of all notes (newest first) with live preview. Folder tree navigation is on the [roadmap](ROADMAP.md).
+
+```
+┌── Notes (3) ──────┬── Shopping List ─────────────────────────────────┐
+│ > Shopping List   │                                                   │
+│   2026-05-27      │  # Shopping List                                  │
+│                   │                                                   │
+│   Project Ideas   │  - [ ] Milk                                       │
+│   2026-05-26      │  - [ ] Bread                                      │
+│                   │  - [x] Coffee                                     │
+│   Daily Journal   │                                                   │
+│   2026-05-25      │  *Last updated: 2026-05-27*                       │
+└───────────────────┴───────────────────────────────────────────────────┘
+ q:quit  n:new  e:edit  D:delete  /:search  j/k:navigate  ^D/^U:scroll
+```
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `n` | Create new note |
+| `e` | Edit selected note in `$EDITOR` |
+| `D` | Delete note (with confirmation) |
+| `/` | Live search / filter |
+| `^D` / `^U` | Scroll preview pane |
+| `q` | Quit |
 
 ---
 
