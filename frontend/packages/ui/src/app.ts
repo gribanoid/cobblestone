@@ -179,7 +179,7 @@ export function createApp(api: CobblestoneApi): void {
       activeTitle = note.title
       activeContent = stripLeadingHeading(note.content)
       isDirty = false
-      isEditing = false
+      isEditing = true
       graph = null
 
       dom.editorEl.value = activeContent
@@ -212,8 +212,6 @@ export function createApp(api: CobblestoneApi): void {
       if (folder) expandedFolders.add(folder)
       await loadNotes()
       await openNote(slug)
-      isEditing = true
-      renderEditorArea(renderCtx())
     } catch (e) {
       showError(dom, String(e))
     }
