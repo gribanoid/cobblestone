@@ -16,7 +16,7 @@ use cobblestone_core as storage;
 
 /// Cobblestone — open-source knowledge base for your private thoughts.
 ///
-/// Notes are stored as Markdown files in ~/.cobblestone.
+/// Notes are stored as Markdown files in ~/Documents/CobblestoneVault.
 /// Run `cb -i` for an interactive TUI, or `cb web` to open the browser UI.
 #[derive(Parser)]
 #[command(name = "cb", version, about, long_about = None)]
@@ -33,7 +33,7 @@ struct Cli {
 enum Command {
     /// List all notes (default when no subcommand is given)
     Ls {
-        /// Optional sub-path inside ~/.cobblestone to list
+        /// Optional sub-path inside the vault to list
         path: Option<String>,
     },
     /// Create a new note (opens $EDITOR)

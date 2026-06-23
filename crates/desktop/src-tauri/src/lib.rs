@@ -7,7 +7,7 @@ pub mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let store = Store::init().expect("Failed to initialise storage at ~/.cobblestone");
+    let store = Store::init().expect("Failed to initialise storage at ~/Documents/CobblestoneVault");
 
     tauri::Builder::default()
         .manage(AppState { store })

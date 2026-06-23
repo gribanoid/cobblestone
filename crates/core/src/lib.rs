@@ -16,10 +16,15 @@ pub struct Store {
 }
 
 impl Store {
-    /// Initialise the default store at `~/.cobblestone`.
-    pub fn init() -> Result<Self> {
+    /// Default vault directory: `~/Documents/CobblestoneVault`.
+    pub fn default_vault_root() -> Result<PathBuf> {
         let home = dirs::home_dir().context("Cannot locate home directory")?;
-        Self::with_root(home.join(".cobblestone"))
+        Ok(home.join("Documents").join("CobblestoneVault"))
+    }
+
+    /// Initialise the default store at `~/Documents/CobblestoneVault`.
+    pub fn init() -> Result<Self> {
+        Self::with_root(Self::default_vault_root()?)
     }
 
     /// Initialise a store at an arbitrary root (used in tests and desktop).
