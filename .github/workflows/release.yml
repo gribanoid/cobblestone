@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install npm deps
+        run: npm --prefix frontend ci
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2.0.0" --locked
+
+      - name: Build and upload release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/desktop/src-tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          tagName: ${{ github.ref_name }}
+          releaseName: Cobblestone ${{ github.ref_name }}
+          releaseBody: |
+            ## Downloads
+
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `Cobblestone_*_aarch64.dmg` |
+            | Linux (deb) | `cobblestone_*_amd64.deb` |
+            | Linux (AppImage) | `cobblestone_*_amd64.AppImage` |
+            | Windows (installer) | `Cobblestone_*_x64-setup.exe` |
+            | Windows (MSI) | `Cobblestone_*_x64_en-US.msi` |
+
+            **macOS (unsigned build):** macOS may show *"damaged and can't be opened"* — the app is fine; Gatekeeper blocks unsigned downloads. Fix:
+
+            ```bash
+            xattr -cr /Applications/Cobblestone.app
+            ```
+
+            Then open normally. Or: right-click the app → **Open** → **Open** (first launch only).
+            **Linux AppImage:** `chmod +x *.AppImage && ./Cobblestone_*.AppImage`
+          releaseDraft: true
+          prerelease: false

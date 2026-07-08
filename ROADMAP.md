@@ -136,12 +136,32 @@ Product constraints for the desktop app (longer-term):
 
 ## 📦 Distribution
 
+### Shipped
+
+- [x] **GitHub Actions release pipeline** — tag `v*` builds `.dmg` (macOS Apple Silicon), `.deb` / `.AppImage` (Linux), `.msi` / `.exe` (Windows); draft [GitHub Releases](https://github.com/gribanoid/cobblestone/releases)
+- [x] **Pre-built desktop binaries** — macOS arm64, Linux x86_64, Windows x86_64 (unsigned)
+
+### Next up
+
 - [ ] Homebrew formula (`brew install cobblestone`)
-- [ ] Pre-built binaries: macOS arm64/x86_64, Linux x86_64, Windows x86_64
-- [ ] GitHub Actions CI — build, test, release pipeline
+- [ ] **macOS code signing & notarization** — Apple Developer ID so Gatekeeper stops blocking downloads (see below)
 - [ ] AUR package (Arch Linux)
 - [ ] Flatpak (Linux)
 - [ ] `cargo-binstall` support
+
+### macOS: damaged and can't be opened
+
+Release builds are **unsigned** (no Apple Developer Program yet). macOS Gatekeeper blocks them and shows a misleading *"damaged"* message — the app is fine.
+
+**Workaround** (after installing from `.dmg`):
+
+```bash
+xattr -cr /Applications/Cobblestone.app
+```
+
+Or: right-click the app → **Open** → **Open** (first launch only).
+
+**Permanent fix (planned):** sign and notarize the app in CI with an Apple Developer certificate.
 
 ---
 

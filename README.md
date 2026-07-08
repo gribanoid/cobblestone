@@ -1,4 +1,4 @@
-# 🪨 Cobblestone
+# Cobblestone
 
 ## Sharpen your thinking.
 
@@ -25,24 +25,28 @@ cd cobblestone
 
 ```bash
 node --version       # 18+
-make npm-install
-cargo install tauri-cli --version "^2.0.0" --locked
+rustc --version      # stable
 xcode-select --install   # macOS only, if needed
+make deps            # npm packages + cargo fetch + tauri-cli
 ```
 
 **Run / build:**
 
 ```bash
 make desktop         # dev: Vite on :1420 + native window
-make desktop-build   # release bundle
+make desktop-build   # release bundle (.app + .dmg on macOS)
 npm run dev:desktop  # frontend only, for UI iteration
 ```
 
 Release artifacts (after `make desktop-build`):
 
-- **macOS** → `target/release/bundle/macos/Cobblestone.app`
+- **macOS** → `target/release/bundle/macos/Cobblestone.app`, `target/release/bundle/dmg/*.dmg`
 - **Linux** → `target/release/bundle/deb/*.deb`, `*.AppImage`
 - **Windows** → `target/release/bundle/msi/*.msi`
+
+**GitHub release (macOS):** push a tag `v*` (e.g. `v0.1.0`) — CI builds the `.dmg` and attaches it to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).
+
+**macOS download blocked?** Unsigned builds trigger Gatekeeper (*"damaged and can't be opened"*). See [ROADMAP — macOS troubleshooting](ROADMAP.md#macos-damaged-and-cant-be-opened) for the fix.
 
 Run `make help` for all build and dev commands.
 
@@ -86,7 +90,7 @@ Wikilinks (`[[Note Title]]`) are parsed in core and shown in the info panel. Cli
 ### Web — `cb web`
 
 ```bash
-make npm-install     # once
+make deps            # once
 make web-build       # build the shared UI into frontend/apps/web/dist
 make web             # or: cargo run -p cb -- web
 ```
