@@ -43,7 +43,13 @@ export function createApp(api: CobblestoneApi): void {
   let graph: NoteGraph | null = null
   let isEditing = false
   let isDirty = false
+  let persistedTitle = ''
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let saveChain: Promise<boolean> = Promise.resolve(true)
+  let opChain: Promise<void> = Promise.resolve()
+  let searchSeq = 0
+  let loadSeq = 0
+  let searchDebounce: ReturnType<typeof setTimeout> | null = null
   let pendingNoteFolder: string | null = null
   let pendingFolderParent: string | null = null
   let pendingRename:
@@ -71,10 +77,88 @@ export function createApp(api: CobblestoneApi): void {
     }
   }
 
+  function syncEditorState() {
+    if (activeSlug !== null) {
+      activeTitle = dom.noteTitleEl.value
+    }
+    if (isEditing) {
+      activeContent = stripLeadingHeading(dom.editorEl.value)
+    }
+  }
+
+  function clearSaveTimer() {
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+  }
+
+  async function flushPendingSave(): Promise<boolean> {
+    clearSaveTimer()
+    if (isDirty && activeSlug !== null) {
+      return saveNote()
+    }
+    return true
+  }
+
+  function enqueueOp<T>(fn: () => Promise<T>): Promise<T> {
+    const run = opChain.then(fn)
+    opChain = run.then(
+      () => {},
+      () => {},
+    )
+    return run
+  }
+
+  async function flushUntilClean(maxAttempts = 3): Promise<boolean> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const saved = await flushPendingSave()
+      if (!saved) return false
+      if (!isDirty) return true
+    }
+    return !isDirty
+  }
+
+  async function loadNoteIntoEditor(slug: string): Promise<void> {
+    const note = await api.getNote(slug)
+    activeSlug = slug
+    activeTitle = note.title
+    persistedTitle = note.title
+    activeContent = stripLeadingHeading(note.content)
+    isDirty = false
+    isEditing = true
+    graph = null
+    dom.editorEl.value = activeContent
+    refresh()
+    api
+      .noteGraph(slug)
+      .then((g) => {
+        if (activeSlug === slug) {
+          graph = g
+          renderRightPanel(renderCtx())
+        }
+      })
+      .catch(() => {})
+  }
+
+  async function openNote(slug: string): Promise<void> {
+    return enqueueOp(async () => {
+      const saved = await flushUntilClean()
+      if (!saved) return
+      if (activeSlug === slug) return
+      try {
+        await loadNoteIntoEditor(slug)
+      } catch (e) {
+        showError(dom, String(e))
+      }
+    })
+  }
+
   function clearActiveNote() {
     activeSlug = null
     activeTitle = ''
     activeContent = ''
+    persistedTitle = ''
     graph = null
     isDirty = false
   }
@@ -156,153 +240,156 @@ export function createApp(api: CobblestoneApi): void {
   }
 
   async function loadNotes() {
+    const seq = ++loadSeq
     try {
-      tree = await api.listTree()
+      const nextTree = await api.listTree()
+      if (seq !== loadSeq) return
+      tree = nextTree
       notes = flattenTree(tree)
       renderNoteList(renderCtx())
     } catch (e) {
-      showError(dom, String(e))
-    }
-  }
-
-  async function openNote(slug: string) {
-    if (saveTimer !== null) {
-      clearTimeout(saveTimer)
-      saveTimer = null
-    }
-    if (isDirty && activeSlug !== null && activeSlug !== slug) {
-      void saveNote()
-    }
-    try {
-      const note = await api.getNote(slug)
-      activeSlug = slug
-      activeTitle = note.title
-      activeContent = stripLeadingHeading(note.content)
-      isDirty = false
-      isEditing = true
-      graph = null
-
-      dom.editorEl.value = activeContent
-      refresh()
-
-      api
-        .noteGraph(slug)
-        .then((g) => {
-          if (activeSlug === slug) {
-            graph = g
-            renderRightPanel(renderCtx())
-          }
-        })
-        .catch(() => {})
-    } catch (e) {
+      if (seq !== loadSeq) return
       showError(dom, String(e))
     }
   }
 
   async function createNote() {
-    const titleFromSearch = dom.searchEl.value.trim()
-    const title =
-      dom.noteTitleInputEl.value.trim() || titleFromSearch || `Note ${Date.now()}`
-    const folder = pendingNoteFolder
-    closeNoteModal(dom)
-    pendingNoteFolder = null
-    try {
-      const slug = await api.createNote(title, folder)
-      dom.searchEl.value = ''
-      if (folder) expandedFolders.add(folder)
-      await loadNotes()
-      await openNote(slug)
-    } catch (e) {
-      showError(dom, String(e))
-    }
+    return enqueueOp(async () => {
+      const titleFromSearch = dom.searchEl.value.trim()
+      const title =
+        dom.noteTitleInputEl.value.trim() || titleFromSearch || `Note ${Date.now()}`
+      const folder = pendingNoteFolder
+      closeNoteModal(dom)
+      pendingNoteFolder = null
+
+      const saved = await flushUntilClean()
+      if (!saved) return
+
+      try {
+        const slug = await api.createNote(title, folder)
+        dom.searchEl.value = ''
+        searchSeq += 1
+        if (folder) expandedFolders.add(folder)
+        await loadNotes()
+        if (activeSlug === slug) return
+        await loadNoteIntoEditor(slug)
+      } catch (e) {
+        showError(dom, String(e))
+      }
+    })
   }
 
   async function moveFolderToParent(folderPath: string, destParent: string | null) {
-    const payload: TreeDrag = { kind: 'folder', path: folderPath, el: document.body }
-    if (!canDropNoteOrFolder(payload, destParent)) return
-    try {
-      const newPath = await api.moveFolder(folderPath, destParent)
-      if (destParent) expandedFolders.add(destParent)
-      expandedFolders.add(newPath)
-      expandedFolders = new Set(
-        [...expandedFolders].map((p) => remapPath(p, folderPath, newPath)),
-      )
-      if (activeSlug) {
-        activeSlug = remapPath(activeSlug, folderPath, newPath)
+    return enqueueOp(async () => {
+      const payload: TreeDrag = { kind: 'folder', path: folderPath, el: document.body }
+      if (!canDropNoteOrFolder(payload, destParent)) return
+      if (
+        activeSlug !== null &&
+        (activeSlug === folderPath || activeSlug.startsWith(`${folderPath}/`))
+      ) {
+        const saved = await flushPendingSave()
+        if (!saved) return
       }
-      await loadNotes()
-      renderRightPanel(renderCtx())
-    } catch (e) {
-      showError(dom, String(e))
-    }
+      try {
+        const newPath = await api.moveFolder(folderPath, destParent)
+        if (destParent) expandedFolders.add(destParent)
+        expandedFolders.add(newPath)
+        expandedFolders = new Set(
+          [...expandedFolders].map((p) => remapPath(p, folderPath, newPath)),
+        )
+        if (activeSlug) {
+          activeSlug = remapPath(activeSlug, folderPath, newPath)
+        }
+        await loadNotes()
+        renderRightPanel(renderCtx())
+      } catch (e) {
+        showError(dom, String(e))
+      }
+    })
   }
 
   async function moveNoteToFolder(slug: string, folder: string | null) {
-    if (folder !== null && noteParentFolder(slug) === folder) return
-    if (folder === null && noteParentFolder(slug) === null) return
-    try {
-      const newSlug = await api.moveNote(slug, folder)
-      if (folder) expandedFolders.add(folder)
-      if (activeSlug === slug) activeSlug = newSlug
-      await loadNotes()
-      if (activeSlug === newSlug) {
-        renderNoteList(renderCtx())
-        renderRightPanel(renderCtx())
+    return enqueueOp(async () => {
+      if (folder !== null && noteParentFolder(slug) === folder) return
+      if (folder === null && noteParentFolder(slug) === null) return
+      if (activeSlug === slug) {
+        const saved = await flushPendingSave()
+        if (!saved) return
       }
-    } catch (e) {
-      showError(dom, String(e))
-    }
+      try {
+        const newSlug = await api.moveNote(slug, folder)
+        if (folder) expandedFolders.add(folder)
+        if (activeSlug === slug) activeSlug = newSlug
+        await loadNotes()
+        if (activeSlug === newSlug) {
+          renderNoteList(renderCtx())
+          renderEditorArea(renderCtx())
+          renderRightPanel(renderCtx())
+        }
+      } catch (e) {
+        showError(dom, String(e))
+      }
+    })
   }
 
   async function createFolder() {
-    const name = dom.folderNameInputEl.value.trim()
-    if (!name) {
-      dom.folderNameInputEl.focus()
-      return
-    }
-    const parent = pendingFolderParent
-    pendingFolderParent = null
-    closeFolderModal(dom)
-    const path = parent ? `${parent}/${name}` : name
-    try {
-      await api.createFolder(path)
-      if (parent) expandedFolders.add(parent)
-      expandedFolders.add(path)
-      await loadNotes()
-    } catch (e) {
-      showError(dom, String(e))
-    }
+    return enqueueOp(async () => {
+      const name = dom.folderNameInputEl.value.trim()
+      if (!name) {
+        dom.folderNameInputEl.focus()
+        return
+      }
+      const parent = pendingFolderParent
+      pendingFolderParent = null
+      closeFolderModal(dom)
+      const path = parent ? `${parent}/${name}` : name
+      try {
+        await api.createFolder(path)
+        if (parent) expandedFolders.add(parent)
+        expandedFolders.add(path)
+        await loadNotes()
+      } catch (e) {
+        showError(dom, String(e))
+      }
+    })
   }
 
-  async function saveNote() {
-    if (!activeSlug) return
-    if (saveTimer !== null) {
-      clearTimeout(saveTimer)
-      saveTimer = null
-    }
+  async function saveNoteOnce(): Promise<boolean> {
+    clearSaveTimer()
+    if (!activeSlug) return true
+
+    syncEditorState()
+    if (!isDirty) return true
+
+    const slugAtStart = activeSlug
+    const titleAtStart = persistedTitle
     const title = activeTitle.trim()
     if (!title) {
       showError(dom, 'Note title cannot be empty')
-      return
+      return false
     }
 
-    let slug = activeSlug
-    const listed = notes.find((n) => n.slug === slug)
-    if (listed && listed.title !== title) {
+    let slug = slugAtStart
+    const content = activeContent
+    if (titleAtStart !== title) {
       try {
-        slug = await api.renameNote(slug, title)
-        activeSlug = slug
-        activeTitle = title
+        slug = await api.renameNote(slugAtStart, title)
+        if (activeSlug === slugAtStart) {
+          activeSlug = slug
+          activeTitle = title
+        }
       } catch (e) {
         showError(dom, String(e))
-        return
+        return false
       }
     }
 
-    const c = contentWithTitle(activeContent, title)
+    const c = contentWithTitle(content, title)
     try {
       await api.saveNote(slug, c)
       if (activeSlug === slug) {
+        activeContent = content
+        persistedTitle = title
         isDirty = false
         renderEditorArea(renderCtx())
         await loadNotes()
@@ -316,87 +403,122 @@ export function createApp(api: CobblestoneApi): void {
           })
           .catch(() => {})
       }
+      return true
     } catch (e) {
       showError(dom, String(e))
+      return false
     }
+  }
+
+  function saveNote(): Promise<boolean> {
+    const run = saveChain.then(() => saveNoteOnce())
+    saveChain = run.then(
+      () => true,
+      () => false,
+    )
+    return run
   }
 
   async function doDelete() {
-    if (!pendingDelete) return
-    const target = pendingDelete
-    pendingDelete = null
-    closeDeleteConfirmModal(dom)
+    return enqueueOp(async () => {
+      if (!pendingDelete) return
+      const saved = await flushPendingSave()
+      if (!saved) return
+      const target = pendingDelete
+      pendingDelete = null
+      closeDeleteConfirmModal(dom)
+      clearSaveTimer()
 
-    if (saveTimer !== null) {
-      clearTimeout(saveTimer)
-      saveTimer = null
-    }
-
-    try {
-      if (target.kind === 'note') {
-        await api.deleteNote(target.slug)
-        if (activeSlug === target.slug) clearActiveNote()
-      } else {
-        await api.deleteFolder(target.path)
-        if (
-          activeSlug !== null &&
-          (activeSlug === target.path || activeSlug.startsWith(`${target.path}/`))
-        ) {
-          clearActiveNote()
+      try {
+        if (target.kind === 'note') {
+          await api.deleteNote(target.slug)
+          if (activeSlug === target.slug) clearActiveNote()
+        } else {
+          await api.deleteFolder(target.path)
+          if (
+            activeSlug !== null &&
+            (activeSlug === target.path || activeSlug.startsWith(`${target.path}/`))
+          ) {
+            clearActiveNote()
+          }
+          expandedFolders = new Set(
+            [...expandedFolders].filter(
+              (p) => p !== target.path && !p.startsWith(`${target.path}/`),
+            ),
+          )
         }
-        expandedFolders = new Set(
-          [...expandedFolders].filter(
-            (p) => p !== target.path && !p.startsWith(`${target.path}/`),
-          ),
-        )
+        refresh()
+        await loadNotes()
+      } catch (e) {
+        showError(dom, String(e))
       }
-      refresh()
-      await loadNotes()
-    } catch (e) {
-      showError(dom, String(e))
-    }
+    })
   }
 
   async function confirmRename() {
-    const name = dom.renameInputEl.value.trim()
-    if (!name || !pendingRename) {
-      dom.renameInputEl.focus()
-      return
-    }
-    const target = pendingRename
-    pendingRename = null
-    closeRenameModal(dom)
-
-    try {
-      if (target.kind === 'note') {
-        const newSlug = await api.renameNote(target.slug, name)
-        if (activeSlug === target.slug) {
-          activeSlug = newSlug
-          activeTitle = name
-        }
-        await loadNotes()
-        if (activeSlug === newSlug) refresh()
-      } else {
-        const newPath = await api.renameFolder(target.path, name)
-        expandedFolders = new Set(
-          [...expandedFolders].map((p) => remapPath(p, target.path, newPath)),
-        )
-        if (activeSlug !== null && activeSlug.startsWith(`${target.path}/`)) {
-          activeSlug = remapPath(activeSlug, target.path, newPath)
-        } else if (activeSlug === target.path) {
-          activeSlug = newPath
-        }
-        await loadNotes()
-        refresh()
+    return enqueueOp(async () => {
+      const name = dom.renameInputEl.value.trim()
+      if (!name || !pendingRename) {
+        dom.renameInputEl.focus()
+        return
       }
-    } catch (e) {
-      showError(dom, String(e))
-    }
+      const target = pendingRename
+      pendingRename = null
+      closeRenameModal(dom)
+
+      if (target.kind === 'note' && activeSlug === target.slug) {
+        const saved = await flushPendingSave()
+        if (!saved) {
+          pendingRename = { kind: 'note', slug: target.slug }
+          openRenameModal(dom, 'Rename note', name)
+          return
+        }
+      } else if (
+        target.kind === 'folder' &&
+        activeSlug !== null &&
+        activeSlug.startsWith(`${target.path}/`)
+      ) {
+        const saved = await flushPendingSave()
+        if (!saved) {
+          pendingRename = { kind: 'folder', path: target.path }
+          openRenameModal(dom, 'Rename folder', name)
+          return
+        }
+      }
+
+      try {
+        if (target.kind === 'note') {
+          const newSlug = await api.renameNote(target.slug, name)
+          if (activeSlug === target.slug) {
+            activeSlug = newSlug
+            activeTitle = name
+            persistedTitle = name
+            isDirty = false
+          }
+          await loadNotes()
+          if (activeSlug === newSlug) refresh()
+        } else {
+          const newPath = await api.renameFolder(target.path, name)
+          expandedFolders = new Set(
+            [...expandedFolders].map((p) => remapPath(p, target.path, newPath)),
+          )
+          if (activeSlug !== null && activeSlug.startsWith(`${target.path}/`)) {
+            activeSlug = remapPath(activeSlug, target.path, newPath)
+          } else if (activeSlug === target.path) {
+            activeSlug = newPath
+          }
+          await loadNotes()
+          refresh()
+        }
+      } catch (e) {
+        showError(dom, String(e))
+      }
+    })
   }
 
   function scheduleAutosave() {
-    if (saveTimer !== null) clearTimeout(saveTimer)
-    saveTimer = setTimeout(saveNote, 2000)
+    clearSaveTimer()
+    saveTimer = setTimeout(() => void saveNote(), 2000)
   }
 
   bindTreeDragDrop(dom, {
@@ -424,18 +546,32 @@ export function createApp(api: CobblestoneApi): void {
     },
   )
 
-  dom.searchEl.addEventListener('input', async () => {
+  async function runSearch() {
     const q = dom.searchEl.value.trim()
     if (!q) {
+      searchSeq += 1
       await loadNotes()
+      renderRightPanel(renderCtx())
       return
     }
+    const seq = ++searchSeq
     try {
-      notes = await api.searchNotes(q)
+      const results = await api.searchNotes(q)
+      if (seq !== searchSeq) return
+      notes = results
       renderNoteList(renderCtx())
     } catch (e) {
+      if (seq !== searchSeq) return
       showError(dom, String(e))
     }
+  }
+
+  dom.searchEl.addEventListener('input', () => {
+    if (searchDebounce !== null) clearTimeout(searchDebounce)
+    searchDebounce = setTimeout(() => {
+      searchDebounce = null
+      void runSearch()
+    }, 200)
   })
 
   dom.newBtnEl.addEventListener('click', () => {
@@ -489,6 +625,8 @@ export function createApp(api: CobblestoneApi): void {
     if (isEditing) {
       activeContent = stripLeadingHeading(dom.editorEl.value)
       dom.editorEl.value = activeContent
+    } else {
+      syncEditorState()
     }
     isEditing = !isEditing
     renderEditorArea(renderCtx())
@@ -555,6 +693,12 @@ export function createApp(api: CobblestoneApi): void {
       dom.saveIndicatorEl.textContent = 'unsaved'
       dom.saveIndicatorEl.className = 'edit-indicator unsaved'
       scheduleAutosave()
+    }
+  })
+
+  window.addEventListener('beforeunload', (e) => {
+    if (isDirty) {
+      e.preventDefault()
     }
   })
 

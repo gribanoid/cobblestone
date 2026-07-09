@@ -7,9 +7,17 @@
     ".": "./src/index.ts",
     "./styles/main.css": "./src/styles/main.css"
   },
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/utils.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@cobblestone/api": "*",
     "marked": "^15",
     "lucide": "^1.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
   }
 }
