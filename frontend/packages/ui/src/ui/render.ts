@@ -10,7 +10,7 @@ import {
   folderHint,
   noteParentFolder,
   bodyForPreview,
-} from './utils'
+} from '../lib/utils'
 
 marked.use({ gfm: true, breaks: false })
 

@@ -1,3 +1,3 @@
 // SPDX-License-Identifier: MIT
 
-export { createApp } from './app'
+export { createApp } from './app/create-app'
