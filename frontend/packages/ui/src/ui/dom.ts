@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-import { el } from './utils'
+import { el } from '../lib/utils'
 
 export interface DomRefs {
   noteListEl: HTMLDivElement

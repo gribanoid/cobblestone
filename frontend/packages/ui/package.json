@@ -8,7 +8,7 @@
     "./styles/main.css": "./src/styles/main.css"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/utils.test.ts",
+    "test": "node --experimental-strip-types --test src/lib/utils.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

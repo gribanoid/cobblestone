@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-import type { DomRefs } from './dom'
-import { DRAG_THRESHOLD_PX, noteParentFolder } from './utils'
+import type { DomRefs } from '../ui/dom'
+import { DRAG_THRESHOLD_PX, noteParentFolder } from '../lib/utils'
 
 export type TreeDrag =
   | { kind: 'note'; slug: string; el: HTMLElement }
