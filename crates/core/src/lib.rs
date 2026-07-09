@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 
@@ -53,15 +53,13 @@ impl Store {
     pub fn create_folder(&self, path: &str) -> Result<()> {
         let path = normalize_folder_path(path)?;
         let dir = self.root.join(&path);
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("Cannot create folder '{}'", path))
+        fs::create_dir_all(&dir).with_context(|| format!("Cannot create folder '{}'", path))
     }
 
     pub fn read(&self, name: &str) -> Result<String> {
         let id = resolve_note_id(name)?;
         let path = self.root.join(format!("{id}.md"));
-        fs::read_to_string(&path)
-            .with_context(|| format!("Note '{id}' not found"))
+        fs::read_to_string(&path).with_context(|| format!("Note '{id}' not found"))
     }
 
     pub fn write(&self, name: &str, content: &str) -> Result<()> {
@@ -71,15 +69,13 @@ impl Store {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Cannot create parent directory for '{id}'"))?;
         }
-        fs::write(&path, content)
-            .with_context(|| format!("Cannot write note '{id}'"))
+        fs::write(&path, content).with_context(|| format!("Cannot write note '{id}'"))
     }
 
     pub fn delete(&self, name: &str) -> Result<()> {
         let id = resolve_note_id(name)?;
         let path = self.root.join(format!("{id}.md"));
-        fs::remove_file(&path)
-            .with_context(|| format!("Note '{id}' not found"))
+        fs::remove_file(&path).with_context(|| format!("Note '{id}' not found"))
     }
 
     /// Move a note into `dest_folder` (or vault root when `None`/empty).
@@ -91,10 +87,7 @@ impl Store {
             bail!("Note '{from_id}' not found");
         }
 
-        let file_name = from_id
-            .rsplit('/')
-            .next()
-            .context("Invalid note id")?;
+        let file_name = from_id.rsplit('/').next().context("Invalid note id")?;
         let new_id = match dest_folder {
             Some(folder) if !folder.trim().is_empty() => {
                 let folder = normalize_folder_path(folder)?;
@@ -129,10 +122,7 @@ impl Store {
             bail!("Folder '{from}' not found");
         }
 
-        let name = from
-            .rsplit('/')
-            .next()
-            .context("Invalid folder path")?;
+        let name = from.rsplit('/').next().context("Invalid folder path")?;
         let new_path = match dest_parent {
             Some(parent) if !parent.trim().is_empty() => {
                 let parent = normalize_folder_path(parent)?;
@@ -203,8 +193,7 @@ impl Store {
         }
         fs::write(&to_path, &new_content)
             .with_context(|| format!("Cannot write note '{new_id}'"))?;
-        fs::remove_file(&from_path)
-            .with_context(|| format!("Cannot remove note '{from_id}'"))?;
+        fs::remove_file(&from_path).with_context(|| format!("Cannot remove note '{from_id}'"))?;
         Ok(new_id)
     }
 
@@ -251,8 +240,7 @@ impl Store {
         if dir == self.root {
             bail!("Cannot delete vault root");
         }
-        fs::remove_dir_all(&dir)
-            .with_context(|| format!("Cannot delete folder '{path}'"))?;
+        fs::remove_dir_all(&dir).with_context(|| format!("Cannot delete folder '{path}'"))?;
         Ok(())
     }
 
@@ -264,7 +252,8 @@ impl Store {
 
     /// Returns the on-disk path for `name` (relative note id).
     pub fn path_for(&self, name: &str) -> PathBuf {
-        self.note_file_path(name).unwrap_or_else(|_| self.root.join(name))
+        self.note_file_path(name)
+            .unwrap_or_else(|_| self.root.join(name))
     }
 
     /// Build a note id from an optional folder path and a human title.
@@ -437,16 +426,16 @@ fn set_content_title(content: &str, title: &str) -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
-    pub name:         String,
-    pub title:        String,
+    pub name: String,
+    pub title: String,
     /// Stored as a `String` so serialisation is cross-platform.
-    pub path:         String,
-    pub created:      String,
-    pub modified:     String,
+    pub path: String,
+    pub created: String,
+    pub modified: String,
     pub modified_raw: u64,
-    pub size:         u64,
-    pub preview:      String,
-    pub tags:         Vec<String>,
+    pub size: u64,
+    pub preview: String,
+    pub tags: Vec<String>,
 }
 
 impl Note {
@@ -457,10 +446,9 @@ impl Note {
 
     /// Like `from_path` but also returns the raw file content.
     fn from_path_with_content(root: &Path, path: &Path) -> Result<(Self, String)> {
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("Cannot read {}", path.display()))?;
-        let meta = fs::metadata(path)
-            .with_context(|| format!("Cannot stat {}", path.display()))?;
+        let content =
+            fs::read_to_string(path).with_context(|| format!("Cannot read {}", path.display()))?;
+        let meta = fs::metadata(path).with_context(|| format!("Cannot stat {}", path.display()))?;
         let name = relative_note_id(root, path)?;
 
         let title = content
@@ -468,12 +456,7 @@ impl Note {
             .find(|l| l.starts_with("# "))
             .map(|l| l.trim_start_matches("# ").trim().to_string())
             .filter(|t| !t.is_empty())
-            .unwrap_or_else(|| {
-                name.rsplit('/')
-                    .next()
-                    .unwrap_or(&name)
-                    .to_string()
-            });
+            .unwrap_or_else(|| name.rsplit('/').next().unwrap_or(&name).to_string());
 
         let preview: String = content
             .lines()
@@ -497,9 +480,7 @@ impl Note {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let modified = sys_time
-            .map(format_file_time)
-            .unwrap_or_default();
+        let modified = sys_time.map(format_file_time).unwrap_or_default();
 
         let note = Self {
             name,
@@ -532,7 +513,13 @@ impl Note {
 pub fn slugify(s: &str) -> String {
     s.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|p| !p.is_empty())
@@ -599,8 +586,8 @@ pub fn extract_wikilinks(content: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 fn collect_md_paths_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir)
-        .with_context(|| format!("Cannot read directory: {}", dir.display()))?
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("Cannot read directory: {}", dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -629,8 +616,8 @@ fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
     let mut folders = Vec::new();
     let mut notes = Vec::new();
 
-    for entry in fs::read_dir(dir)
-        .with_context(|| format!("Cannot read directory: {}", dir.display()))?
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("Cannot read directory: {}", dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -975,14 +962,14 @@ mod tests {
     fn list_sorted_newest_first() {
         let (_dir, store) = temp_store();
         store.write("alpha", "# A").unwrap();
-        store.write("beta",  "# B").unwrap();
+        store.write("beta", "# B").unwrap();
 
         // Set alpha's mtime to epoch+1 s and beta's to epoch+2 s explicitly,
         // so this test is independent of OS/sandbox mtime resolution.
         let t_old = filetime::FileTime::from_unix_time(1, 0);
         let t_new = filetime::FileTime::from_unix_time(2, 0);
         filetime::set_file_mtime(store.path_for("alpha"), t_old).unwrap();
-        filetime::set_file_mtime(store.path_for("beta"),  t_new).unwrap();
+        filetime::set_file_mtime(store.path_for("beta"), t_new).unwrap();
 
         let notes = store.list_notes().unwrap();
         assert_eq!(notes.len(), 2);
@@ -998,8 +985,12 @@ mod tests {
     #[test]
     fn search_finds_by_content() {
         let (_dir, store) = temp_store();
-        store.write("note-a", "# Note A\n\nRust programming is fun").unwrap();
-        store.write("note-b", "# Note B\n\nPython is dynamic").unwrap();
+        store
+            .write("note-a", "# Note A\n\nRust programming is fun")
+            .unwrap();
+        store
+            .write("note-b", "# Note B\n\nPython is dynamic")
+            .unwrap();
         let results = store.search("rust").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0.name, "note-a");
@@ -1040,7 +1031,9 @@ mod tests {
     #[test]
     fn search_returns_matching_lines() {
         let (_dir, store) = temp_store();
-        store.write("n", "# N\n\nfoo bar\nhello world\nbaz").unwrap();
+        store
+            .write("n", "# N\n\nfoo bar\nhello world\nbaz")
+            .unwrap();
         let results = store.search("hello").unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].1.iter().any(|l| l.contains("hello")));
@@ -1230,7 +1223,9 @@ mod tests {
     fn note_graph_outgoing_and_backlinks() {
         let (_dir, store) = temp_store();
         store.write("alpha", "# Alpha\n\nSee [[Beta]].").unwrap();
-        store.write("beta", "# Beta\n\nLinks to [[Alpha]].").unwrap();
+        store
+            .write("beta", "# Beta\n\nLinks to [[Alpha]].")
+            .unwrap();
         store.write("lonely", "# Lonely\n\nNo links.").unwrap();
 
         let graph = store.note_graph("alpha").unwrap();
