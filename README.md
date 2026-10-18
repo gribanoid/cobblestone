@@ -14,7 +14,7 @@ Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, o
 
 ## Quick start — desktop
 
-Native window via **Vite** and **Tauri 2** — no Electron, no browser required.
+Native window via **Dioxus** on top of `cobblestone-core` — full Rust stack, no Node/Electron.
 
 ```bash
 git clone https://github.com/yourname/cobblestone
@@ -24,31 +24,35 @@ cd cobblestone
 **Prerequisites (one-time):**
 
 ```bash
-node --version       # 18+
-rustc --version      # stable
+rustc --version      # stable (1.85+)
 xcode-select --install   # macOS only, if needed
-make deps            # npm packages + cargo fetch + tauri-cli
+# Linux: WebKitGTK 4.1 + GTK 3 (see dioxus desktop docs)
+make deps            # cargo fetch + dioxus-cli
 ```
 
 **Run / build:**
 
 ```bash
-make desktop         # dev: Vite on :1420 + native window
-make desktop-build   # release bundle (.app + .dmg on macOS)
-npm run dev:desktop  # frontend only, for UI iteration
+make desktop         # run the native Dioxus desktop app
+make desktop-build   # release binary: target/release/cobblestone
 ```
 
-Release artifacts (after `make desktop-build`):
+**GitHub release:** push a tag `v*` (e.g. `v0.1.0`) — CI builds platform binaries and attaches them to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).
 
-- **macOS** → `target/release/bundle/macos/Cobblestone.app`, `target/release/bundle/dmg/*.dmg`
-- **Linux** → `target/release/bundle/deb/*.deb`, `*.AppImage`
-- **Windows** → `target/release/bundle/msi/*.msi`
-
-**GitHub release (macOS):** push a tag `v*` (e.g. `v0.1.0`) — CI builds the `.dmg` and attaches it to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).
-
-**macOS download blocked?** Unsigned builds trigger Gatekeeper (*"damaged and can't be opened"*). See [ROADMAP — macOS troubleshooting](ROADMAP.md#macos-damaged-and-cant-be-opened) for the fix.
+**macOS download blocked?** Unsigned builds trigger Gatekeeper. See [ROADMAP — macOS troubleshooting](ROADMAP.md#macos-damaged-and-cant-be-opened) for the fix.
 
 Run `make help` for all build and dev commands.
+
+**CI checks** (also via `make ci` / `make lint`):
+
+| Check | Tool |
+|-------|------|
+| Format | `cargo fmt --check` |
+| Lints | `cargo clippy -D warnings` (desktop + wasm) |
+| Tests | `cargo test` |
+| Docs | `cargo doc -D warnings` |
+| Advisories | `cargo deny` |
+| Memory bugs (core) | AddressSanitizer on nightly |
 
 ---
 
@@ -67,7 +71,7 @@ Run `make help` for all build and dev commands.
 
 ## Graphical UI
 
-The desktop app and browser UI share the same **TypeScript** UI (`@cobblestone/ui`). Both talk to `cobblestone-core` — Tauri `invoke` on desktop, REST `/api/*` in the browser.
+Desktop and browser share the same **Dioxus** UI (`cobblestone-ui`). Desktop calls `cobblestone-core` in-process; the browser UI is WASM and talks to REST `/api/*` served by `cb web`.
 
 **Features:**
 
@@ -85,13 +89,12 @@ Wikilinks (`[[Note Title]]`) are parsed in core and shown in the info panel. Cli
 |----------|--------|
 | `Ctrl+S` / `⌘S` | Save current note |
 | `Tab` (in editor) | Insert 2 spaces |
-| `Esc` | Close modal or context menu |
 
 ### Web — `cb web`
 
 ```bash
 make deps            # once
-make web-build       # build the shared UI into frontend/apps/web/dist
+make web-build       # build WASM UI into crates/ui/dist-web
 make web             # or: cargo run -p cb -- web
 ```
 
@@ -138,22 +141,15 @@ Related: [[Meal Planning]]
 
 ```
 cobblestone/
-  frontend/
-    packages/
-      api/                # CobblestoneApi types + web/tauri adapters
-      ui/                 # shared UI (CSS, app logic, rendering)
-    apps/
-      desktop/            # Vite entry → Tauri window
-      web/                # Vite entry → axum static files
   Makefile
   crates/
-    core/                 # cobblestone-core — storage, search, tree, wikilink graph
-    cli/                  # cb binary (clap · ratatui · axum web server)
-    desktop/
-      src-tauri/          # Tauri 2 backend (thin IPC over core)
+    core/          # cobblestone-core — storage, search, tree, wikilink graph
+    cli/           # cb binary (clap · ratatui · axum web server)
+    ui/            # cobblestone-ui — shared Dioxus UI (desktop + WASM web)
+    desktop-app/   # cobblestone-desktop — native Dioxus window + DirectStore
 ```
 
-All interfaces read and write the same Markdown files. The graphical UI uses `CobblestoneApi` — thin adapters over the same `Store` methods (`list_tree`, `note_graph`, folder CRUD, etc.).
+All interfaces read and write the same Markdown files. The graphical UI uses a `VaultBackend` trait — `DirectStore` on desktop, HTTP client to `/api/*` in the browser — over the same `Store` methods (`list_tree`, `note_graph`, folder CRUD, etc.).
 
 ---
 
@@ -174,6 +170,10 @@ cb show ideas/project     # nested notes use path-style slugs
 cb edit shopping-list     # open a note in $EDITOR
 cb rm  shopping-list      # delete a note (asks for confirmation)
 cb search "rust async"    # full-text search across all notes
+cb backup                 # zip vault → ~/Documents/CobblestoneVault-backups/
+cb backup -o ./vault.zip  # custom output path (or a directory)
+cb restore ./vault.zip    # restore; aborts on conflicts
+cb restore ./vault.zip -f # restore and overwrite conflicting files
 
 # Directory listing
 cb ls                     # same as cb — lists all notes

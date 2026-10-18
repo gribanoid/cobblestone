@@ -471,9 +471,7 @@ impl Note {
         let tags = extract_tags(&content);
 
         let created_time = meta.created().ok().or_else(|| meta.modified().ok());
-        let created = created_time
-            .map(|t| format_file_time(t))
-            .unwrap_or_default();
+        let created = created_time.map(format_file_time).unwrap_or_default();
 
         let sys_time = meta.modified().ok();
         let modified_raw = sys_time

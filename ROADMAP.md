@@ -14,8 +14,7 @@ Items are roughly ordered by priority within each milestone.
 - [x] `-i` flag — full-screen TUI (ratatui + crossterm)
 - [x] `cb web` — embedded local web server (axum) with browser UI
 - [x] Web UI — dark/light theme, live Markdown preview, auto-save
-- [x] Desktop app scaffold — TypeScript + Vite + Tauri 2 backend
-- [x] Tauri IPC commands: list, get, save, create, delete, search
+- [x] Desktop app scaffold (historically Tauri; now Dioxus)
 - [x] Tag extraction (`#tag` syntax), full-text search
 - [x] MIT license
 
@@ -25,8 +24,8 @@ Items are roughly ordered by priority within each milestone.
 
 ### Shipped
 
-- [x] **Shared TypeScript UI** — `@cobblestone/ui` used by web and desktop
-- [x] **Desktop app launch** — functional TypeScript UI with Tauri IPC wired up
+- [x] **Rust-only graphical UI** — shared Dioxus UI (`cobblestone-ui`) for desktop and web WASM
+- [x] **Desktop app** — Dioxus desktop + in-process `cobblestone-core` (`DirectStore`)
 - [x] **Desktop note CRUD** — list, open, create, edit, save, delete
 - [x] **Desktop backend search** — sidebar uses the shared storage search path
 - [x] **Desktop note metadata panel** — tags, size, modified date, links, backlinks
@@ -34,7 +33,7 @@ Items are roughly ordered by priority within each milestone.
 - [x] **Nested file tree** — hierarchical folders and notes in web & desktop
 - [x] **File operations in graphical UI** — create, rename, move, delete notes and folders; drag-and-drop; context menus
 - [x] **Nested storage in core** — subdirectories, `list_tree()`, move/rename/delete folder APIs
-- [x] **Wikilink graph in core** — `extract_wikilinks()`, `Store::note_graph()` shared by web API and Tauri
+- [x] **Wikilink graph in core** — `extract_wikilinks()`, `Store::note_graph()` shared by web API and desktop
 - [x] **Wikilinks info panel** — outgoing links and backlinks shown in the side panel (clickable)
 
 ### Next up
@@ -107,7 +106,7 @@ Product constraints for the desktop app (longer-term):
 - [ ] **Agenda view** — `cb agenda` shows all notes with upcoming due dates sorted by time
 - [ ] **Event daemon** — optional background process (`cb daemon`) that watches for due events and fires notifications without the app being open
 - [ ] **Calendar export** — `cb export --ical` generates an `.ics` file compatible with any calendar app
-- [ ] **Native desktop notifications** — Tauri plugin for OS-level alerts (macOS Notification Center, Linux libnotify, Windows toast)
+- [ ] **Native desktop notifications** — OS-level alerts (macOS Notification Center, Linux libnotify, Windows toast)
 - [ ] **Web UI agenda widget** — sidebar panel listing upcoming deadlines
 
 ---
@@ -167,7 +166,7 @@ Or: right-click the app → **Open** → **Open** (first launch only).
 
 ## 💡 Ideas Backlog
 
-- Mobile companion app (Tauri mobile target — iOS/Android)
+- Mobile companion app (Dioxus mobile target — iOS/Android)
 - Browser extension to clip web pages as notes
 - CRDT-based local sync (Automerge)
 - Vim key-bindings mode in web editor

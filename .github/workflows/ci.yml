@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy (static)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux GUI deps (Dioxus desktop)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Clippy — core + CLI
+        run: cargo clippy -p cobblestone-core -p cb --all-targets -- -D warnings
+
+      - name: Clippy — UI + desktop
+        run: >
+          cargo clippy -p cobblestone-ui -p cobblestone-desktop
+          --features desktop --all-targets -- -D warnings
+
+      - name: Clippy — UI web (wasm)
+        run: >
+          cargo clippy -p cobblestone-ui --features web
+          --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux GUI deps (Dioxus desktop)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Unit / integration tests
+        run: |
+          cargo test -p cobblestone-core
+          cargo test -p cb
+          cargo test -p cobblestone-ui --features desktop
+
+  doc:
+    name: Docs
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux GUI deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+      - name: rustdoc (deny warnings)
+        run: cargo doc --workspace --no-deps --document-private-items
+
+  audit:
+    name: Advisories (cargo-deny)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: --all-features
+          command: check
+          # Runs advisories + bans + licenses + sources from deny.toml
+
+  sanitizer:
+    name: AddressSanitizer (dynamic)
+    runs-on: ubuntu-22.04
+    # ASan needs nightly + build-std; scoped to cobblestone-core (no GUI).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: asan-nightly
+      - name: Test cobblestone-core under AddressSanitizer
+        env:
+          RUSTFLAGS: -Zsanitizer=address
+          RUSTDOCFLAGS: -Zsanitizer=address
+        run: >
+          cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu
+          -p cobblestone-core --lib --tests

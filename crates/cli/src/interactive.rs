@@ -7,15 +7,15 @@ use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    Terminal,
 };
 
 use cobblestone_core::{Note, Store};
@@ -28,17 +28,17 @@ enum UiMode {
     Normal,
     Search,
     Confirm { note_name: String },
-    NewNote  { title_buf: String },
-    Message  { text: String },
+    NewNote { title_buf: String },
+    Message { text: String },
 }
 
 struct App {
-    store:    Store,
-    notes:    Vec<Note>,
+    store: Store,
+    notes: Vec<Note>,
     selected: usize,
-    scroll:   u16,
-    mode:     UiMode,
-    search:   String,
+    scroll: u16,
+    mode: UiMode,
+    search: String,
 }
 
 impl App {
@@ -106,7 +106,9 @@ impl App {
 
     fn nav_down(&mut self) {
         let len = self.visible_notes().len();
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         if self.selected + 1 < len {
             self.selected += 1;
             self.scroll = 0;
@@ -121,7 +123,9 @@ impl App {
     }
 
     fn show_error(&mut self, e: anyhow::Error) {
-        self.mode = UiMode::Message { text: format!("Error: {e}") };
+        self.mode = UiMode::Message {
+            text: format!("Error: {e}"),
+        };
     }
 }
 
@@ -134,11 +138,11 @@ pub fn run(store: Store) -> Result<()> {
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
-    let backend  = CrosstermBackend::new(io::stdout());
+    let backend = CrosstermBackend::new(io::stdout());
     let mut term = Terminal::new(backend)?;
 
-    let mut app    = App::new(store)?;
-    let result     = event_loop(&mut term, &mut app);
+    let mut app = App::new(store)?;
+    let result = event_loop(&mut term, &mut app);
 
     // Always restore the terminal — even if event_loop returned an error.
     let _ = disable_raw_mode();
@@ -152,10 +156,7 @@ pub fn run(store: Store) -> Result<()> {
 // Event loop
 // ---------------------------------------------------------------------------
 
-fn event_loop(
-    term: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> Result<()> {
+fn event_loop(term: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     loop {
         term.draw(|f| draw(f, app))?;
 
@@ -163,84 +164,85 @@ fn event_loop(
             continue;
         }
 
-        let Event::Key(key) = event::read()? else { continue };
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
 
         match &app.mode {
             // ------------------------------------------------------------------
-            UiMode::Normal => {
-                match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _)
-                    | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+            UiMode::Normal => match (key.code, key.modifiers) {
+                (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
 
-                    (KeyCode::Down | KeyCode::Char('j'), _) => app.nav_down(),
-                    (KeyCode::Up   | KeyCode::Char('k'), _) => app.nav_up(),
+                (KeyCode::Down | KeyCode::Char('j'), _) => app.nav_down(),
+                (KeyCode::Up | KeyCode::Char('k'), _) => app.nav_up(),
 
-                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                        app.scroll = app.scroll.saturating_add(8);
-                    }
-                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                        app.scroll = app.scroll.saturating_sub(8);
-                    }
-                    (KeyCode::PageDown, _) => app.scroll = app.scroll.saturating_add(8),
-                    (KeyCode::PageUp,   _) => app.scroll = app.scroll.saturating_sub(8),
-
-                    (KeyCode::Char('/'), _) => {
-                        app.mode    = UiMode::Search;
-                        app.search  = String::new();
-                        app.selected = 0;
-                    }
-
-                    (KeyCode::Char('n'), _) => {
-                        app.mode = UiMode::NewNote { title_buf: String::new() };
-                    }
-
-                    (KeyCode::Char('e'), _) => {
-                        if let Some(name) = app.current_note_name() {
-                            leave_tui(term)?;
-                            let result = crate::commands::cmd_edit(&app.store, &name);
-                            enter_tui(term)?;
-                            if let Err(e) = result {
-                                app.show_error(e);
-                            } else if let Err(e) = app.refresh() {
-                                app.show_error(e);
-                            }
-                        }
-                    }
-
-                    (KeyCode::Char('D'), _) => {
-                        if let Some(name) = app.current_note_name() {
-                            app.mode = UiMode::Confirm { note_name: name };
-                        }
-                    }
-
-                    _ => {}
+                (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                    app.scroll = app.scroll.saturating_add(8);
                 }
-            }
+                (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                    app.scroll = app.scroll.saturating_sub(8);
+                }
+                (KeyCode::PageDown, _) => app.scroll = app.scroll.saturating_add(8),
+                (KeyCode::PageUp, _) => app.scroll = app.scroll.saturating_sub(8),
+
+                (KeyCode::Char('/'), _) => {
+                    app.mode = UiMode::Search;
+                    app.search = String::new();
+                    app.selected = 0;
+                }
+
+                (KeyCode::Char('n'), _) => {
+                    app.mode = UiMode::NewNote {
+                        title_buf: String::new(),
+                    };
+                }
+
+                (KeyCode::Char('e'), _) => {
+                    if let Some(name) = app.current_note_name() {
+                        leave_tui(term)?;
+                        let result = crate::commands::cmd_edit(&app.store, &name);
+                        enter_tui(term)?;
+                        if let Err(e) = result {
+                            app.show_error(e);
+                        } else if let Err(e) = app.refresh() {
+                            app.show_error(e);
+                        }
+                    }
+                }
+
+                (KeyCode::Char('D'), _) => {
+                    if let Some(name) = app.current_note_name() {
+                        app.mode = UiMode::Confirm { note_name: name };
+                    }
+                }
+
+                _ => {}
+            },
 
             // ------------------------------------------------------------------
-            UiMode::Search => {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Enter => {
-                        app.mode = UiMode::Normal;
-                    }
-                    KeyCode::Backspace => {
-                        app.search.pop();
-                        app.selected = 0;
-                    }
-                    KeyCode::Char(c) => {
-                        app.search.push(c);
-                        app.selected = 0;
-                    }
-                    KeyCode::Down => app.nav_down(),
-                    KeyCode::Up   => app.nav_up(),
-                    _ => {}
+            UiMode::Search => match key.code {
+                KeyCode::Esc | KeyCode::Enter => {
+                    app.mode = UiMode::Normal;
                 }
-            }
+                KeyCode::Backspace => {
+                    app.search.pop();
+                    app.selected = 0;
+                }
+                KeyCode::Char(c) => {
+                    app.search.push(c);
+                    app.selected = 0;
+                }
+                KeyCode::Down => app.nav_down(),
+                KeyCode::Up => app.nav_up(),
+                _ => {}
+            },
 
             // ------------------------------------------------------------------
             UiMode::NewNote { .. } => {
                 // Reborrow mutably inside the arm.
-                let UiMode::NewNote { ref mut title_buf } = app.mode else { unreachable!() };
+                let UiMode::NewNote { ref mut title_buf } = app.mode else {
+                    unreachable!()
+                };
                 match key.code {
                     KeyCode::Esc => {
                         app.mode = UiMode::Normal;
@@ -258,7 +260,9 @@ fn event_loop(
                             };
                             if app.store.exists(&name) {
                                 app.mode = UiMode::Message {
-                                    text: format!("Note '{name}' already exists. Press 'e' to edit."),
+                                    text: format!(
+                                        "Note '{name}' already exists. Press 'e' to edit."
+                                    ),
                                 };
                             } else {
                                 let content = format!("# {title}\n\n");
@@ -281,8 +285,12 @@ fn event_loop(
                             }
                         }
                     }
-                    KeyCode::Backspace => { title_buf.pop(); }
-                    KeyCode::Char(c)   => { title_buf.push(c); }
+                    KeyCode::Backspace => {
+                        title_buf.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        title_buf.push(c);
+                    }
                     _ => {}
                 }
             }
@@ -359,7 +367,7 @@ fn draw_sidebar(f: &mut ratatui::Frame, app: &App, area: Rect) {
 
     let title = match &app.mode {
         UiMode::Search => format!(" / {} ", app.search),
-        _              => format!(" 🪨  Notes ({}) ", app.notes.len()),
+        _ => format!(" 🪨  Notes ({}) ", app.notes.len()),
     };
 
     let items: Vec<ListItem> = visible
@@ -399,7 +407,7 @@ fn draw_sidebar(f: &mut ratatui::Frame, app: &App, area: Rect) {
 
     if let UiMode::NewNote { title_buf } = &app.mode {
         let popup = centered_rect(60, 20, f.area());
-        let para  = Paragraph::new(format!("New note title:\n\n> {title_buf}_"))
+        let para = Paragraph::new(format!("New note title:\n\n> {title_buf}_"))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -413,7 +421,7 @@ fn draw_sidebar(f: &mut ratatui::Frame, app: &App, area: Rect) {
 
     if let UiMode::Confirm { note_name } = &app.mode {
         let popup = centered_rect(50, 15, f.area());
-        let para  = Paragraph::new(format!(
+        let para = Paragraph::new(format!(
             "Delete note '{note_name}'?\n\n  y  →  Yes, delete\n  any  →  Cancel"
         ))
         .block(
@@ -429,7 +437,7 @@ fn draw_sidebar(f: &mut ratatui::Frame, app: &App, area: Rect) {
 
     if let UiMode::Message { text } = &app.mode {
         let popup = centered_rect(55, 14, f.area());
-        let para  = Paragraph::new(text.as_str())
+        let para = Paragraph::new(text.as_str())
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -444,7 +452,7 @@ fn draw_sidebar(f: &mut ratatui::Frame, app: &App, area: Rect) {
 
 fn draw_content(f: &mut ratatui::Frame, app: &App, area: Rect) {
     let content = app.current_content();
-    let lines   = render_md(&content);
+    let lines = render_md(&content);
 
     let title = app
         .visible_notes()
@@ -462,15 +470,18 @@ fn draw_content(f: &mut ratatui::Frame, app: &App, area: Rect) {
 
 fn draw_status(f: &mut ratatui::Frame, app: &App, area: Rect) {
     let text = match &app.mode {
-        UiMode::Search      => " ESC/ENTER: done  ↑↓: navigate ",
+        UiMode::Search => " ESC/ENTER: done  ↑↓: navigate ",
         UiMode::NewNote { .. } => " Type title and press ENTER  ·  ESC: cancel ",
         UiMode::Confirm { .. } => " y: delete  ·  any key: cancel ",
         UiMode::Message { .. } => " Press any key to dismiss ",
         UiMode::Normal => " q:quit  n:new  e:edit  D:delete  /:search  j/k:navigate  ^D/^U:scroll ",
     };
 
-    let bar = Paragraph::new(text)
-        .style(Style::default().bg(Color::Rgb(30, 30, 50)).fg(Color::DarkGray));
+    let bar = Paragraph::new(text).style(
+        Style::default()
+            .bg(Color::Rgb(30, 30, 50))
+            .fg(Color::DarkGray),
+    );
     f.render_widget(bar, area);
 }
 
@@ -487,7 +498,10 @@ fn render_md(content: &str) -> Vec<Line<'static>> {
 
         if s.starts_with("```") {
             in_code = !in_code;
-            lines.push(Line::from(Span::styled(s, Style::default().fg(Color::DarkGray))));
+            lines.push(Line::from(Span::styled(
+                s,
+                Style::default().fg(Color::DarkGray),
+            )));
             continue;
         }
 
@@ -502,27 +516,39 @@ fn render_md(content: &str) -> Vec<Line<'static>> {
         let line = if let Some(h) = s.strip_prefix("# ") {
             Line::from(Span::styled(
                 h.to_string(),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ))
         } else if let Some(h) = s.strip_prefix("## ") {
             Line::from(Span::styled(
                 h.to_string(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))
         } else if let Some(h) = s.strip_prefix("### ") {
             Line::from(Span::styled(
                 h.to_string(),
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             ))
         } else if let Some(t) = s.strip_prefix("- [ ] ") {
             Line::from(vec![
                 Span::styled("  ☐ ", Style::default().fg(Color::Red)),
                 Span::raw(t.to_string()),
             ])
-        } else if let Some(t) = s.strip_prefix("- [x] ").or_else(|| s.strip_prefix("- [X] ")) {
+        } else if let Some(t) = s
+            .strip_prefix("- [x] ")
+            .or_else(|| s.strip_prefix("- [X] "))
+        {
             Line::from(vec![
                 Span::styled("  ✓ ", Style::default().fg(Color::Green)),
-                Span::styled(t.to_string(), Style::default().add_modifier(Modifier::CROSSED_OUT)),
+                Span::styled(
+                    t.to_string(),
+                    Style::default().add_modifier(Modifier::CROSSED_OUT),
+                ),
             ])
         } else if let Some(t) = s.strip_prefix("- ").or_else(|| s.strip_prefix("* ")) {
             Line::from(vec![

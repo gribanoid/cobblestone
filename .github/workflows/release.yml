@@ -17,24 +17,18 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-            bundles: app,dmg
+            artifact: cobblestone-macos-aarch64
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            bundles: deb,appimage
+            artifact: cobblestone-linux-x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            bundles: msi,nsis
+            artifact: cobblestone-windows-x86_64
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -55,39 +49,66 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Install npm deps
-        run: npm --prefix frontend ci
+      - name: Build desktop release
+        run: cargo build -p cobblestone-desktop --release --target ${{ matrix.target }}
 
-      - name: Install tauri-cli
-        run: cargo install tauri-cli --version "^2.0.0" --locked
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          bin="target/${{ matrix.target }}/release/cobblestone"
+          chmod +x "$bin"
+          cp "$bin" "${{ matrix.artifact }}"
+          tar -czf "${{ matrix.artifact }}.tar.gz" "${{ matrix.artifact }}"
 
-      - name: Build and upload release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Copy-Item "target/${{ matrix.target }}/release/cobblestone.exe" "${{ matrix.artifact }}.exe"
+          Compress-Archive -Path "${{ matrix.artifact }}.exe" -DestinationPath "${{ matrix.artifact }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          projectPath: crates/desktop/src-tauri
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-          tagName: ${{ github.ref_name }}
-          releaseName: Cobblestone ${{ github.ref_name }}
-          releaseBody: |
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Cobblestone ${{ github.ref_name }}
+          draft: true
+          files: dist/*
+          body: |
             ## Downloads
 
             | Platform | File |
             |----------|------|
-            | macOS (Apple Silicon) | `Cobblestone_*_aarch64.dmg` |
-            | Linux (deb) | `cobblestone_*_amd64.deb` |
-            | Linux (AppImage) | `cobblestone_*_amd64.AppImage` |
-            | Windows (installer) | `Cobblestone_*_x64-setup.exe` |
-            | Windows (MSI) | `Cobblestone_*_x64_en-US.msi` |
+            | macOS (Apple Silicon) | `cobblestone-macos-aarch64.tar.gz` |
+            | Linux (x86_64) | `cobblestone-linux-x86_64.tar.gz` |
+            | Windows (x86_64) | `cobblestone-windows-x86_64.zip` |
 
-            **macOS (unsigned build):** macOS may show *"damaged and can't be opened"* — the app is fine; Gatekeeper blocks unsigned downloads. Fix:
+            **macOS (unsigned build):** Gatekeeper may block the binary. Fix:
 
             ```bash
-            xattr -cr /Applications/Cobblestone.app
+            xattr -cr ./cobblestone-macos-aarch64
+            chmod +x ./cobblestone-macos-aarch64
+            ./cobblestone-macos-aarch64
             ```
 
-            Then open normally. Or: right-click the app → **Open** → **Open** (first launch only).
-            **Linux AppImage:** `chmod +x *.AppImage && ./Cobblestone_*.AppImage`
-          releaseDraft: true
-          prerelease: false
+            **Linux:** ensure WebKitGTK is installed (`libwebkit2gtk-4.1-0` on Debian/Ubuntu).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

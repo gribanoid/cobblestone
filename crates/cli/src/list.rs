@@ -49,8 +49,11 @@ pub fn run(store: &Store) -> Result<()> {
 
     println!(
         "{}",
-        format!("  {} note(s)  ·  cb -i for interactive mode  ·  cb web to open browser",
-                notes.len()).dimmed()
+        format!(
+            "  {} note(s)  ·  cb -i for interactive mode  ·  cb web to open browser",
+            notes.len()
+        )
+        .dimmed()
     );
 
     Ok(())
@@ -82,8 +85,8 @@ pub fn run_path(store: &Store, path: &str) -> Result<()> {
 
     for entry in std::fs::read_dir(&target)? {
         let entry = entry?;
-        let meta  = entry.metadata()?;
-        let name  = entry.file_name().to_string_lossy().to_string();
+        let meta = entry.metadata()?;
+        let name = entry.file_name().to_string_lossy().to_string();
 
         if meta.is_dir() {
             println!("  {}  {}", "d".cyan(), name.bold());
@@ -120,8 +123,8 @@ pub fn search(store: &Store, query: &str) -> Result<()> {
 
 fn human_size(bytes: u64) -> String {
     match bytes {
-        b if b < 1024       => format!("{b} B"),
+        b if b < 1024 => format!("{b} B"),
         b if b < 1024 * 1024 => format!("{:.1} KB", b as f64 / 1024.0),
-        b                   => format!("{:.1} MB", b as f64 / (1024.0 * 1024.0)),
+        b => format!("{:.1} MB", b as f64 / (1024.0 * 1024.0)),
     }
 }

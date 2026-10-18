@@ -1,0 +1,16 @@
+[application]
+name = "cobblestone"
+default_platform = "web"
+
+[web.app]
+title = "Cobblestone"
+
+[web.watcher]
+reload_html = true
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []

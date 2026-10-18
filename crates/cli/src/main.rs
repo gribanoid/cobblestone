@@ -61,6 +61,21 @@ enum Command {
         /// Search query
         query: String,
     },
+    /// Backup the vault to a zip archive
+    Backup {
+        /// Output zip path, or a directory to write into
+        /// (default: ~/Documents/CobblestoneVault-backups/CobblestoneVault-<timestamp>.zip)
+        #[arg(short, long)]
+        output: Option<std::path::PathBuf>,
+    },
+    /// Restore the vault from a backup zip
+    Restore {
+        /// Path to a zip created by `cb backup`
+        archive: std::path::PathBuf,
+        /// Overwrite existing files that conflict with the archive
+        #[arg(short = 'f', long)]
+        force: bool,
+    },
     /// Start the web interface
     Web {
         /// Port to listen on (default: 3000)
@@ -75,7 +90,7 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli   = Cli::parse();
+    let cli = Cli::parse();
     let store = storage::Store::init()?;
 
     if cli.interactive {
@@ -83,17 +98,17 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
-        None | Some(Command::Ls { path: None }) => {
-            list::run(&store)
+        None | Some(Command::Ls { path: None }) => list::run(&store),
+        Some(Command::Ls { path: Some(p) }) => list::run_path(&store, &p),
+        Some(Command::New { title }) => commands::cmd_new(&store, &title),
+        Some(Command::Show { name }) => commands::cmd_show(&store, &name),
+        Some(Command::Edit { name }) => commands::cmd_edit(&store, &name),
+        Some(Command::Rm { name }) => commands::cmd_delete(&store, &name),
+        Some(Command::Search { query }) => list::search(&store, &query),
+        Some(Command::Backup { output }) => commands::cmd_backup(&store, output),
+        Some(Command::Restore { archive, force }) => {
+            commands::cmd_restore(&store, &archive, force)
         }
-        Some(Command::Ls { path: Some(p) }) => {
-            list::run_path(&store, &p)
-        }
-        Some(Command::New   { title }) => commands::cmd_new(&store, &title),
-        Some(Command::Show  { name  }) => commands::cmd_show(&store, &name),
-        Some(Command::Edit  { name  }) => commands::cmd_edit(&store, &name),
-        Some(Command::Rm    { name  }) => commands::cmd_delete(&store, &name),
-        Some(Command::Search{ query }) => list::search(&store, &query),
-        Some(Command::Web   { port  }) => web::run(store, port).await,
+        Some(Command::Web { port }) => web::run(store, port).await,
     }
 }

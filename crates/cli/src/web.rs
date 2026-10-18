@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
-    Json, Router,
 };
 use cobblestone_core::{Note, Store};
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,9 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
 
     let app = Router::new()
         .nest("/api", api)
-        .fallback_service(ServeDir::new(&ui_dist).fallback(ServeFile::new(ui_dist.join("index.html"))))
+        .fallback_service(
+            ServeDir::new(&ui_dist).fallback(ServeFile::new(ui_dist.join("index.html"))),
+        )
         .with_state(state);
 
     let addr = format!("127.0.0.1:{port}");
@@ -46,7 +48,7 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
 
     if !ui_dist.join("index.html").exists() {
         eprintln!(
-            "Web UI not built — run `npm run build:web` from the repo root first.\n\
+            "Web UI not built — run `make web-build` from the repo root first.\n\
              API is available at {url}/api/…"
         );
     } else {
@@ -62,8 +64,7 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
 }
 
 fn ui_dist_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../frontend/apps/web/dist")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/ui/dist-web")
 }
 
 // ---------------------------------------------------------------------------
@@ -113,14 +114,16 @@ async fn api_tree(State(store): State<AppState>) -> impl IntoResponse {
     }
 }
 
-async fn api_get(
-    State(store): State<AppState>,
-    Path(slug): Path<String>,
-) -> impl IntoResponse {
+async fn api_get(State(store): State<AppState>, Path(slug): Path<String>) -> impl IntoResponse {
     match store.read(&slug) {
         Ok(content) => {
             let title = title_from_content(&content, &slug);
-            Json(NoteContent { slug, title, content }).into_response()
+            Json(NoteContent {
+                slug,
+                title,
+                content,
+            })
+            .into_response()
         }
         Err(_) => (StatusCode::NOT_FOUND, "Note not found").into_response(),
     }
@@ -166,10 +169,7 @@ async fn api_create(
     }
 }
 
-async fn api_delete(
-    State(store): State<AppState>,
-    Path(slug): Path<String>,
-) -> impl IntoResponse {
+async fn api_delete(State(store): State<AppState>, Path(slug): Path<String>) -> impl IntoResponse {
     match store.delete(&slug) {
         Ok(_) => StatusCode::OK.into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "Note not found").into_response(),
@@ -288,10 +288,7 @@ async fn api_search(
     }
 }
 
-async fn api_graph(
-    State(store): State<AppState>,
-    Path(slug): Path<String>,
-) -> impl IntoResponse {
+async fn api_graph(State(store): State<AppState>, Path(slug): Path<String>) -> impl IntoResponse {
     match store.note_graph(&slug) {
         Ok(graph) => Json(graph).into_response(),
         Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),

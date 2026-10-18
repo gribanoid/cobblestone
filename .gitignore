@@ -3,12 +3,8 @@
 **/*.rs.bk
 *.pdb
 
-# ── Tauri auto-generated ──────────────────────────────────────────────────────
-crates/desktop/src-tauri/gen/
-
-# ── Node / npm ────────────────────────────────────────────────────────────────
-**/node_modules/
-frontend/apps/*/dist/
+# ── Dioxus web build output ──────────────────────────────────────────────────
+crates/ui/dist-web/
 
 # ── Editor / IDE ──────────────────────────────────────────────────────────────
 .idea/
