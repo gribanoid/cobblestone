@@ -162,7 +162,6 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
             ctx.persisted_title.set(note.title);
             ctx.active_content.set(strip_leading_heading(&note.content));
             ctx.is_dirty.set(false);
-            ctx.is_editing.set(true);
             ctx.graph.set(None);
             refresh_graph(ctx, backend, &slug).await;
         }
@@ -323,6 +322,10 @@ pub async fn confirm_delete(mut ctx: AppCtx, backend: SharedBackend) {
             }
             Err(e) => ctx.show_error(e),
         },
+        DeleteKind::File { path } => match backend.delete_file(&path).await {
+            Ok(()) => reload_tree(ctx, backend).await,
+            Err(e) => ctx.show_error(e),
+        },
     }
 }
 
@@ -422,7 +425,53 @@ pub fn clear_editor(mut ctx: AppCtx) {
     ctx.is_dirty.set(false);
 }
 
-/// Mark dirty and schedule a generation-guarded autosave (2s).
+/// Where an attached file goes.
+pub enum AttachTarget {
+    /// Pasted / dropped into the open note: saved next to it, `![[name]]`
+    /// inserted at the caret.
+    ActiveNote,
+    /// Dropped onto a sidebar folder (`""` = vault root): saved there only.
+    Folder(String),
+}
+
+/// Save an image (Obsidian-style). Empty `filename` → `Pasted image <stamp>.png`.
+/// For [`AttachTarget::ActiveNote`] the editor edit triggers autosave.
+pub async fn attach_image(
+    mut ctx: AppCtx,
+    backend: SharedBackend,
+    target: AttachTarget,
+    filename: String,
+    bytes: Vec<u8>,
+) {
+    let (folder, insert) = match target {
+        AttachTarget::ActiveNote => {
+            let Some(slug) = ctx.active_slug.peek().clone() else {
+                ctx.show_error("Open a note to attach an image");
+                return;
+            };
+            (slug.rsplit_once('/').map(|(dir, _)| dir.to_string()), true)
+        }
+        AttachTarget::Folder(f) => ((!f.is_empty()).then_some(f), false),
+    };
+    match backend
+        .save_attachment(folder.as_deref(), &filename, &bytes)
+        .await
+    {
+        Ok(rel) => {
+            let name = rel.rsplit('/').next().unwrap_or(&rel);
+            if insert {
+                ctx.editor_insert.set(Some(format!("![[{name}]]")));
+            }
+            if let Some(f) = folder {
+                expand_folder_path(&mut ctx.expanded.write(), &f);
+            }
+            reload_tree(ctx, backend).await;
+        }
+        Err(e) => ctx.show_error(format!("Could not save image: {e}")),
+    }
+}
+
+/// Mark dirty and schedule a generation-guarded autosave (~0.8s).
 pub fn mark_dirty(mut ctx: AppCtx, ops: Ops) {
     ctx.is_dirty.set(true);
     let seq = {
@@ -431,7 +480,7 @@ pub fn mark_dirty(mut ctx: AppCtx, ops: Ops) {
         *g
     };
     spawn(async move {
-        delay_ms(2000).await;
+        delay_ms(800).await;
         if *ctx.dirty_gen.peek() == seq && *ctx.is_dirty.peek() {
             ops.send(AppOp::Save);
         }
@@ -543,6 +592,23 @@ pub fn handle_context_action(mut ctx: AppCtx, action: ContextAction) {
                 message: "This will permanently delete the folder and everything inside it.".into(),
             });
         }
+        ContextAction::DeleteFile { path } => {
+            let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            ctx.modal.set(ModalState::Delete {
+                kind: DeleteKind::File { path },
+                title: "Delete file?".into(),
+                message: format!(
+                    "'{name}' will be permanently removed from disk. Notes that embed it will show a missing image."
+                ),
+            });
+        }
+        ContextAction::InsertInNote { text } => {
+            if ctx.active_slug.peek().is_some() {
+                ctx.editor_insert.set(Some(text));
+            } else {
+                ctx.show_error("Open a note first");
+            }
+        }
         ContextAction::Copy { text } => {
             spawn(async move {
                 if let Err(e) = copy_to_clipboard(&text).await {
@@ -600,6 +666,39 @@ pub fn note_menu_items(slug: &str) -> Vec<ContextMenuItem> {
             danger: true,
             action: ContextAction::DeleteNote {
                 slug: slug.to_string(),
+            },
+        },
+    ]
+}
+
+pub fn file_menu_items(path: &str) -> Vec<ContextMenuItem> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let embed = format!("![[{name}]]");
+    vec![
+        ContextMenuItem {
+            label: "Insert into note".into(),
+            danger: false,
+            action: ContextAction::InsertInNote {
+                text: embed.clone(),
+            },
+        },
+        ContextMenuItem {
+            label: "Copy embed link".into(),
+            danger: false,
+            action: ContextAction::Copy { text: embed },
+        },
+        ContextMenuItem {
+            label: "Copy path".into(),
+            danger: false,
+            action: ContextAction::Copy {
+                text: path.to_string(),
+            },
+        },
+        ContextMenuItem {
+            label: "Delete".into(),
+            danger: true,
+            action: ContextAction::DeleteFile {
+                path: path.to_string(),
             },
         },
     ]

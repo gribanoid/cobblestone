@@ -32,6 +32,21 @@ pub trait VaultBackend: Send + Sync {
     async fn delete_folder(&self, path: &str) -> Result<(), String>;
     async fn search_notes(&self, query: &str) -> Result<Vec<NoteInfo>, String>;
     async fn note_graph(&self, slug: &str) -> Result<NoteGraph, String>;
+
+    /// Save raw image bytes into `folder` (vault-relative, `None` = root).
+    /// Returns the vault-relative path; its file name is unique vault-wide.
+    async fn save_attachment(
+        &self,
+        folder: Option<&str>,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<String, String>;
+
+    /// Browser-usable `src` for an embed target (bare name or vault path).
+    async fn attachment_src(&self, name: &str) -> Result<String, String>;
+
+    /// Delete an attachment by vault-relative path.
+    async fn delete_file(&self, path: &str) -> Result<(), String>;
 }
 
 pub type SharedBackend = Arc<dyn VaultBackend>;

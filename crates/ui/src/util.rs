@@ -9,6 +9,44 @@ pub fn note_parent_folder(slug: &str) -> Option<String> {
     slug.rfind('/').map(|idx| slug[..idx].to_string())
 }
 
+pub fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    fn val(b: u8) -> Result<u32, String> {
+        Ok(match b {
+            b'A'..=b'Z' => (b - b'A') as u32,
+            b'a'..=b'z' => (b - b'a' + 26) as u32,
+            b'0'..=b'9' => (b - b'0' + 52) as u32,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return Err("Invalid base64 character".into()),
+        })
+    }
+    let cleaned: Vec<u8> = input
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect();
+    if cleaned.len() % 4 != 0 {
+        return Err("Invalid base64 length".into());
+    }
+    let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
+    for chunk in cleaned.chunks(4) {
+        let a = val(chunk[0])?;
+        let b = val(chunk[1])?;
+        let pad2 = chunk[2] == b'=';
+        let pad3 = chunk[3] == b'=';
+        let c = if pad2 { 0 } else { val(chunk[2])? };
+        let d = if pad3 { 0 } else { val(chunk[3])? };
+        let n = (a << 18) | (b << 12) | (c << 6) | d;
+        out.push((n >> 16) as u8);
+        if !pad2 {
+            out.push((n >> 8) as u8);
+        }
+        if !pad3 {
+            out.push(n as u8);
+        }
+    }
+    Ok(out)
+}
+
 /// Collect every folder path in the tree (depth-first).
 pub fn collect_folder_paths(nodes: &[VaultNode]) -> Vec<String> {
     let mut out = Vec::new();
@@ -36,9 +74,35 @@ pub fn sort_vault_tree(nodes: &mut [VaultNode], mode: TreeSort) {
 }
 
 fn cmp_vault_nodes(a: &VaultNode, b: &VaultNode, mode: TreeSort) -> Ordering {
+    // Folders, then notes, then attachment files.
+    let rank = |n: &VaultNode| match n {
+        VaultNode::Folder { .. } => 0,
+        VaultNode::Note { .. } => 1,
+        VaultNode::File { .. } => 2,
+    };
     match (a, b) {
-        (VaultNode::Folder { .. }, VaultNode::Note { .. }) => Ordering::Less,
-        (VaultNode::Note { .. }, VaultNode::Folder { .. }) => Ordering::Greater,
+        _ if rank(a) != rank(b) => rank(a).cmp(&rank(b)),
+        (
+            VaultNode::File {
+                name: a_name,
+                modified: a_mod,
+                ..
+            },
+            VaultNode::File {
+                name: b_name,
+                modified: b_mod,
+                ..
+            },
+        ) => match mode {
+            TreeSort::NameDesc => cmp_ci(b_name, a_name),
+            TreeSort::ModifiedNew | TreeSort::CreatedNew => {
+                b_mod.cmp(a_mod).then_with(|| cmp_ci(a_name, b_name))
+            }
+            TreeSort::ModifiedOld | TreeSort::CreatedOld => {
+                a_mod.cmp(b_mod).then_with(|| cmp_ci(a_name, b_name))
+            }
+            TreeSort::NameAsc => cmp_ci(a_name, b_name),
+        },
         (
             VaultNode::Folder { name: a_name, .. },
             VaultNode::Folder { name: b_name, .. },
@@ -67,6 +131,7 @@ fn cmp_vault_nodes(a: &VaultNode, b: &VaultNode, mode: TreeSort) -> Ordering {
             TreeSort::CreatedNew => b_cre.cmp(a_cre).then_with(|| cmp_ci(a_title, b_title)),
             TreeSort::CreatedOld => a_cre.cmp(b_cre).then_with(|| cmp_ci(a_title, b_title)),
         },
+        _ => Ordering::Equal,
     }
 }
 
@@ -96,6 +161,7 @@ pub fn flatten_tree(nodes: &[VaultNode]) -> Vec<NoteInfo> {
                 tags: tags.clone(),
             }),
             VaultNode::Folder { children, .. } => out.extend(flatten_tree(children)),
+            VaultNode::File { .. } => {}
         }
     }
     out

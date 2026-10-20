@@ -3,6 +3,7 @@
 mod context_menu;
 mod drag_preview;
 mod editor;
+mod md_editor;
 mod modals;
 mod panel;
 mod sidebar;

@@ -116,4 +116,74 @@ impl VaultBackend for DirectStore {
             .map(NoteGraph::from)
             .map_err(|e| e.to_string())
     }
+
+    async fn save_attachment(
+        &self,
+        folder: Option<&str>,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<String, String> {
+        self.store
+            .save_attachment(folder, filename, bytes)
+            .map_err(|e| e.to_string())
+    }
+
+    async fn attachment_src(&self, name: &str) -> Result<String, String> {
+        let bytes = self
+            .store
+            .read_attachment(name)
+            .map_err(|e| e.to_string())?;
+        let mime = mime_from_name(name);
+        Ok(format!(
+            "data:{mime};base64,{}",
+            base64_encode(&bytes)
+        ))
+    }
+
+    async fn delete_file(&self, path: &str) -> Result<(), String> {
+        self.store.delete_file(path).map_err(|e| e.to_string())
+    }
+}
+
+fn mime_from_name(name: &str) -> &'static str {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else if lower.ends_with(".svg") {
+        "image/svg+xml"
+    } else if lower.ends_with(".avif") {
+        "image/avif"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let a = chunk[0] as u32;
+        let b = chunk.get(1).copied().unwrap_or(0) as u32;
+        let c = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (a << 16) | (b << 8) | c;
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(n & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }

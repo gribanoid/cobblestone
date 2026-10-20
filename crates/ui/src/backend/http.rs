@@ -186,6 +186,66 @@ impl VaultBackend for HttpApi {
         let path = format!("/api/notes/{}/graph", urlencoding(slug));
         api_json("GET", &path, None).await
     }
+
+    async fn save_attachment(
+        &self,
+        folder: Option<&str>,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<String, String> {
+        #[derive(Deserialize)]
+        struct AttachResp {
+            name: String,
+        }
+        let resp: AttachResp = api_json(
+            "POST",
+            "/api/attachments",
+            Some(serde_json::json!({
+                "folder": folder,
+                "filename": filename,
+                "data_base64": base64_encode(bytes),
+            })),
+        )
+        .await?;
+        Ok(resp.name)
+    }
+
+    async fn attachment_src(&self, name: &str) -> Result<String, String> {
+        Ok(format!("/api/attachments/{}", urlencoding(name)))
+    }
+
+    async fn delete_file(&self, path: &str) -> Result<(), String> {
+        api_empty(
+            "POST",
+            "/api/files/delete",
+            Some(serde_json::json!({ "path": path })),
+        )
+        .await
+    }
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let a = chunk[0] as u32;
+        let b = chunk.get(1).copied().unwrap_or(0) as u32;
+        let c = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (a << 16) | (b << 8) | c;
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(n & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }
 
 fn urlencoding(s: &str) -> String {

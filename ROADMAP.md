@@ -35,6 +35,9 @@ Items are roughly ordered by priority within each milestone.
 - [x] **Nested storage in core** — subdirectories, `list_tree()`, move/rename/delete folder APIs
 - [x] **Wikilink graph in core** — `extract_wikilinks()`, `Store::note_graph()` shared by web API and desktop
 - [x] **Wikilinks info panel** — outgoing links and backlinks shown in the side panel (clickable)
+- [x] **`cobblestone-editor`** — own near-WYSIWYG Markdown editor crate (replaces CodeMirror); live lists/headings, `![[image]]` embeds, paste-to-attachments
+- [x] **EditorSession + scenario TDD** — pure `EditorCmd`/`EditorEffect` orchestration (`session.rs`); History snapshots restore focus/caret/reveal; regression scenarios for caret, lists, embeds, selection
+- [x] **Editor block kinds** — task lists `- [ ]`, blockquotes `>`, horizontal rules; inline tokenizer for live-hide (`inline.rs`)
 
 ### Next up
 
@@ -75,7 +78,7 @@ Product constraints for the desktop app (longer-term):
 | **Local folder as workspace** | Planned — vault path still defaults to `~/.cobblestone` |
 | **File operations** | Done — CRUD for notes and folders in core + graphical UI |
 | **External change detection** | Planned |
-| **Markdown-first editor** | Partial — preview, autosave, shortcuts; no syntax highlighting or attachments yet |
+| **Markdown-first editor** | Done (v0) — `cobblestone-editor` + `EditorSession` TDD; tasks/quotes/HR; inline tokenizer; further polish in v0.4 |
 | **Connected notes** | Partial — wikilink parse, graph, backlinks panel; no autocomplete, broken-link hints, or preview navigation |
 | **Search and navigation** | Partial — full-text search; no quick switcher, filters, or bookmarks |
 | **Organization** | Partial — tags; no favorites, daily notes, templates, or global tag list |
@@ -87,13 +90,23 @@ Product constraints for the desktop app (longer-term):
 
 ## 🌐 v0.4 — Web UI Enhancements
 
-- [ ] **CodeMirror editor** — syntax highlighting, bracket matching
+- [ ] **Polish `cobblestone-editor`** — wire idle-line emphasis live-hide via `inline_display_text`, better mobile caret; keep expanding `session` scenarios (see `session::scenarios`)
+- [x] **EditorSession undo/redo + block selection** — text + caret snapshots; cross-block delete/cut via `EditorCmd` *(shipped with TDD harness)*
 - [ ] **Search match highlights** — highlight matching lines in search results
 - [x] **Folder/category support** — subdirectories in storage *(shipped in v0.2)*
 - [ ] **PWA manifest** — installable as desktop app from browser
 - [ ] **Offline-first service worker**
 
-*(Wikilink navigation in preview moved to v0.2 — shared UI work.)*
+*(Wikilink navigation in preview moved to v0.2 — shared UI work. CodeMirror dropped in favour of `cobblestone-editor`.)*
+
+---
+
+## ✏️ Editor — longer term
+
+Markdown near-WYSIWYG ships first in `cobblestone-editor`. After that mode is stable:
+
+- [ ] **Universal editor** — evolve the same crate beyond Markdown: plain text / code fences with language-aware highlighting, optional gutter/line numbers, shared keymap layer (without bringing back CodeMirror/Monaco)
+- [ ] **Vim key-bindings** — optional mode on top of the universal editor *(also listed under Ideas)*
 
 ---
 
@@ -169,7 +182,7 @@ Or: right-click the app → **Open** → **Open** (first launch only).
 - Mobile companion app (Dioxus mobile target — iOS/Android)
 - Browser extension to clip web pages as notes
 - CRDT-based local sync (Automerge)
-- Vim key-bindings mode in web editor
+- Vim key-bindings mode (via universal `cobblestone-editor`)
 - YAML front-matter support (`---` header parsing)
 - Note version history (per-note git blame)
 

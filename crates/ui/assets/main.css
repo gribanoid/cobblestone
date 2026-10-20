@@ -43,6 +43,16 @@ input, textarea { font: inherit; outline: none }
 
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
 .app { display: flex; height: 100vh; overflow: hidden }
+/* Text selection only inside the note (editor / preview) and form fields —
+   never across the sidebar, toolbar or panels. */
+.app { -webkit-user-select: none; user-select: none }
+.app .cb-md-editor,
+.app .preview,
+.app input,
+.app textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
 
 /* ─── Sidebar ────────────────────────────────────────────────────────────── */
 .sidebar {
@@ -249,6 +259,58 @@ input, textarea { font: inherit; outline: none }
   pointer-events: none;
 }
 .tree-folder:hover, .tree-note:hover { background: var(--surface2) }
+/* Finder file dragged over a folder / the tree root. */
+.tree-folder.cb-file-drop-over,
+.vault-tree.cb-file-drop-over {
+  background: color-mix(in srgb, var(--accent), transparent 78%);
+  border-left-color: var(--accent);
+}
+/* Attachment rows: same metrics as notes, muted, with an extension badge. */
+.tree-file {
+  position: relative;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  cursor: pointer; border-left: 2px solid transparent;
+  font-size: 12.5px; min-height: 28px;
+  color: var(--subtext);
+}
+.tree-file:hover { background: var(--surface2); color: var(--text) }
+.tree-children > .tree-file::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--tree-indent) + 2px);
+  top: 50%;
+  width: calc(var(--tree-indent) - 6px);
+  height: 1px;
+  background: var(--tree-guide);
+}
+.tree-file .tree-note-title { flex: 1 1 auto; min-width: 0 }
+.tree-file-ext {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--muted);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--surface2);
+}
+.tree-file-preview {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .45);
+}
+.tree-file-preview img {
+  display: block;
+  max-width: 420px;
+  max-height: 280px;
+  border-radius: 4px;
+}
 .tree-note.active { background: var(--surface2); border-left-color: var(--accent) }
 .tree-chevron {
   flex: 0 0 16px; width: 16px; height: 16px;
@@ -272,7 +334,7 @@ input, textarea { font: inherit; outline: none }
 }
 .tree-folder-icon svg.lucide {
   width: 14px; height: 14px;
-  stroke: var(--accent2);
+  stroke: var(--subtext);
 }
 .tree-note-icon svg.lucide {
   width: 13px; height: 13px;
@@ -331,8 +393,27 @@ input, textarea { font: inherit; outline: none }
 .tb-btn.danger { background: none; color: var(--muted) }
 .tb-btn.danger:hover { color: var(--red) }
 .tb-btn.active { background: var(--surface2); color: var(--accent) }
-.edit-indicator { font-size: 11px; color: var(--muted); padding: 1px 6px }
-.edit-indicator.unsaved { color: var(--accent2) }
+/* Save status: empty ring when saved, filled when dirty. */
+.edit-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--muted);
+  background: transparent;
+  vertical-align: middle;
+  padding: 0;
+}
+.edit-indicator.saved {
+  border-color: var(--muted);
+  background: transparent;
+}
+.edit-indicator.unsaved {
+  border-color: var(--accent2);
+  background: var(--accent2);
+}
 .icon-btn {
   background: none; color: var(--muted); padding: 4px 6px; border-radius: 3px; font-size: 13px;
   display: grid; place-items: center;
@@ -342,7 +423,12 @@ input, textarea { font: inherit; outline: none }
   stroke: currentColor;
 }
 .icon-btn:hover { background: var(--surface2); color: var(--text) }
-.editor-wrap { flex: 1; display: flex; min-height: 0 }
+.editor-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
 .editor {
   flex: 1; width: 100%; height: 100%; resize: none;
   background: var(--bg); color: var(--text); border: none; padding: 28px 40px;
@@ -350,6 +436,348 @@ input, textarea { font: inherit; outline: none }
   font-size: 13.5px; line-height: 1.75; tab-size: 4;
 }
 .editor.hidden { display: none }
+
+/* ─── cobblestone-editor (near-WYSIWYG) ───────────────────────────────────── */
+.cb-md-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+.cb-md-host.cb-md-drag-over,
+.editor-wrap.cb-md-drag-over,
+#editor-area.cb-md-drag-over .editor-wrap {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.cb-md-host.cb-md-drag-over::after,
+.editor-wrap.cb-md-drag-over::after {
+  content: "Drop image to attach";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  pointer-events: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bg);
+  background: color-mix(in srgb, var(--accent) 92%, #000);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+}
+.cb-md-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 40px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+  outline: none;
+}
+.cb-md-block {
+  display: flex;
+  /* The editor is a fixed-height flex column: without this, rows shrink to
+     min-height once the note overflows and wrapped lines overlap the next row. */
+  flex-shrink: 0;
+  align-items: flex-start; /* baseline + textarea = horizontal/vertical jump */
+  gap: 0; /* spacing via gutter padding — keeps selection one continuous strip */
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 1.7em;
+  padding: 1px 4px;
+  margin: 0 -4px;
+  cursor: text;
+  border-radius: 3px;
+}
+.cb-md-block-active {
+  background: transparent;
+}
+/* Document selection hugs each line's content (marker + text), Obsidian-style.
+   Vertical box-shadow fills the row padding so adjacent lines join seamlessly. */
+.cb-md-editor { --cb-md-sel: color-mix(in srgb, #7b6bb0 42%, transparent); }
+.cb-md-block-sel .cb-md-bullet-gutter,
+.cb-md-block-sel .cb-md-ol-gutter,
+.cb-md-block-sel .cb-md-sel-text,
+.cb-md-block-sel .cb-md-link-label {
+  background: var(--cb-md-sel);
+  box-shadow: 0 -1px 0 var(--cb-md-sel), 0 1px 0 var(--cb-md-sel);
+}
+.cb-md-block-sel.cb-md-code,
+.cb-md-block-sel.cb-md-image {
+  background: var(--cb-md-sel);
+}
+.cb-md-sel-text {
+  flex: 0 1 auto;
+  min-width: 0.5em; /* empty lines still show a sliver */
+  min-height: 1.7em;
+  padding-right: 0.3em;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.cb-md-has-sel .cb-md-input::selection,
+.cb-md-has-sel .cb-md-textarea::selection {
+  background: transparent;
+  color: inherit;
+}
+/* Auto-height line: an invisible ::after twin with the same text sizes the
+   grid cell; the textarea fills it, so long lines wrap instead of clipping. */
+.cb-md-grow {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cb-md-grow::after {
+  content: attr(data-value) " ";
+  visibility: hidden;
+  pointer-events: none;
+  grid-area: 1 / 1;
+  font: inherit;
+  line-height: 1.7;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-height: 1.7em;
+}
+.cb-md-grow > .cb-md-input {
+  grid-area: 1 / 1;
+  height: 100%;
+}
+.cb-md-embed-src {
+  flex-wrap: wrap;
+}
+.cb-md-embed-preview {
+  flex: 0 0 100%;
+  padding: 4px 0 6px;
+}
+.cb-md-embed-preview .cb-embed-image {
+  display: block;
+  max-width: min(100%, 720px);
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.cb-md-input {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.7;
+  padding: 0;
+  margin: 0;
+  caret-color: var(--text);
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-height: 1.7em;
+  box-sizing: border-box;
+  vertical-align: top;
+}
+/* Idle lines hide the caret; a focused field always shows it (the old selector
+   out-specified `.cb-md-input:focus` and hid the caret when focus ≠ active row). */
+.cb-md-block:not(.cb-md-block-active) .cb-md-input:not(:focus) {
+  caret-color: transparent;
+}
+.cb-md-block-active .cb-md-input,
+.cb-md-input:focus,
+.cb-md-textarea:focus {
+  color: inherit;
+  caret-color: var(--text);
+}
+.cb-md-bullet-gutter,
+.cb-md-ol-gutter {
+  flex: 0 0 auto;
+  color: var(--subtext);
+  user-select: none;
+  line-height: 1.7;
+  box-sizing: border-box;
+  padding-right: 0.45em;
+}
+.cb-md-bullet-gutter {
+  min-width: 1em;
+  text-align: right;
+  font-weight: 700;
+}
+/* Compact marker; tabular nums keep 9→10 from shifting too hard. */
+.cb-md-ol-gutter {
+  min-width: 1.4em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.cb-md-text {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 1.7em;
+  line-height: 1.7;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.cb-md-hit-below {
+  flex: 1 1 auto;
+  min-height: 40vh;
+  cursor: text;
+}
+.cb-md-wikilink .cb-md-link-label,
+.cb-md-mdlink .cb-md-link-label {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: text;
+}
+.cb-md-blank-placeholder {
+  display: inline-block;
+  min-width: 1px;
+}
+.cb-md-heading {
+  font-weight: 700;
+  color: var(--text);
+}
+.cb-md-h1 { font-size: 1.55em; line-height: 1.35; margin: 0.2em 0; }
+.cb-md-h2 { font-size: 1.3em; line-height: 1.4; margin: 0.15em 0; }
+.cb-md-h3 { font-size: 1.12em; line-height: 1.45; }
+.cb-md-h4, .cb-md-h5, .cb-md-h6 { font-size: 1.02em; color: var(--subtext); }
+.cb-md-task-gutter {
+  flex: 0 0 auto;
+  color: var(--subtext);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.7;
+  padding-right: 0.4em;
+  font-size: 1.05em;
+}
+.cb-md-task-done {
+  color: var(--muted);
+}
+.cb-md-quote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.75em;
+  color: var(--subtext);
+}
+.cb-md-hr {
+  padding: 10px 0;
+}
+.cb-md-hr-line {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+.cb-md-image {
+  display: block;
+  padding: 6px 0;
+}
+/* Rendered (non-text) rows: native text selection there can't be edited or
+   deleted — use the editor's block selection instead. */
+.cb-md-block.cb-md-image:not(.cb-md-block-active),
+.cb-md-block.cb-md-wikilink:not(.cb-md-block-active),
+.cb-md-block.cb-md-mdlink:not(.cb-md-block-active),
+.cb-md-block.cb-md-code:not(.cb-md-block-active) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.cb-md-image .cb-embed-image {
+  display: block;
+  max-width: min(100%, 720px);
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.cb-md-image-missing {
+  color: var(--muted);
+  font-family: 'SFMono-Regular', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+.cb-md-code {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin: 10px 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+  cursor: text;
+}
+.cb-md-code-lang {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  user-select: none;
+}
+.cb-md-code-pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre;
+}
+.cb-md-code-pre code {
+  font: inherit;
+  background: none;
+  padding: 0;
+}
+.cb-md-code-editing {
+  padding: 0;
+}
+.cb-md-textarea {
+  display: block;
+  width: 100%;
+  min-height: 8em;
+  border: none;
+  outline: none;
+  resize: vertical;
+  padding: 12px 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 4;
+  caret-color: var(--text);
+}
+.cb-md-block-active.cb-md-code .cb-md-textarea {
+  color: var(--text);
+}
 .preview { flex: 1; overflow-y: auto; padding: 32px 48px; font-size: 15px; line-height: 1.85; max-width: 860px; margin: 0 auto; width: 100% }
 .preview.hidden { display: none }
 
@@ -360,6 +788,16 @@ input, textarea { font: inherit; outline: none }
 .preview p  { margin: 0 0 14px }
 .preview a  { color: var(--accent); text-decoration: none }
 .preview a:hover { text-decoration: underline }
+.preview img.cb-embed-image,
+.preview .cb-embed-image {
+  display: block;
+  max-width: min(100%, 720px);
+  height: auto;
+  margin: 12px 0 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
 .preview strong { font-weight: 700 }
 .preview em  { color: var(--subtext) }
 .preview del { color: var(--muted) }
@@ -387,6 +825,19 @@ input, textarea { font: inherit; outline: none }
   background: var(--surface); border-left: 1px solid var(--border);
   overflow-y: auto; padding: 12px 12px 20px;
   font-size: 12.5px;
+  transition: width .15s ease, min-width .15s ease, padding .15s ease, border-color .15s ease;
+}
+.right-panel.right-panel-collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-left-color: transparent;
+  overflow: hidden;
+  pointer-events: none;
+}
+.icon-btn.active {
+  color: var(--accent);
+  background: var(--surface2);
 }
 .panel-section {
   padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border);

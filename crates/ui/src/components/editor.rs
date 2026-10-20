@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 
+use std::collections::HashMap;
+
 use dioxus::prelude::*;
 
 use crate::actions::{mark_dirty, toggle_theme};
-use crate::icons::IconSunMoon;
-use crate::markdown::render_markdown_preview;
-use crate::ops::{AppOp, Ops};
+use crate::backend::SharedBackend;
+use crate::components::md_editor::MarkdownEditor;
+use crate::icons::{IconPanelRight, IconSunMoon};
+use crate::markdown::embed_image_names;
+use crate::ops::Ops;
 use crate::state::AppCtx;
-use crate::util::strip_leading_heading;
 
 const LOGO: Asset = asset!("/assets/cobblestone.png");
 
@@ -15,14 +18,44 @@ const LOGO: Asset = asset!("/assets/cobblestone.png");
 pub fn EditorArea() -> Element {
     let ctx = use_context::<AppCtx>();
     let ops = use_context::<Ops>();
+    let backend = use_context::<SharedBackend>();
     let active = ctx.active_slug;
     let mut title = ctx.active_title;
-    let mut content = ctx.active_content;
-    let mut is_editing = ctx.is_editing;
+    let content = ctx.active_content;
     let is_dirty = ctx.is_dirty;
+    let mut panel_open = ctx.panel_open;
 
-    // Derived preview — recomputes only when content/title change (Dioxus memo idiom).
-    let preview_html = use_memo(move || render_markdown_preview(&content.read(), &title.read()));
+    // Attachment name → browser src (data URL or /api/attachments/…).
+    let mut image_srcs = use_signal(HashMap::<String, String>::new);
+
+    use_effect(move || {
+        let _slug = active.read().clone();
+        image_srcs.write().clear();
+    });
+
+    use_effect(move || {
+        let body = content.read().clone();
+        let names = embed_image_names(&body);
+        if names.is_empty() {
+            return;
+        }
+        let backend = backend.clone();
+        spawn(async move {
+            for name in names {
+                if image_srcs.peek().contains_key(&name) {
+                    continue;
+                }
+                match backend.attachment_src(&name).await {
+                    Ok(src) => {
+                        image_srcs.write().insert(name, src);
+                    }
+                    Err(e) => {
+                        eprintln!("attachment src '{name}': {e}");
+                    }
+                }
+            }
+        });
+    });
 
     if active.read().is_none() {
         return rsx! {
@@ -65,25 +98,11 @@ pub fn EditorArea() -> Element {
                         class: if *is_dirty.read() {
                             "edit-indicator unsaved"
                         } else {
-                            "edit-indicator"
+                            "edit-indicator saved"
                         },
                         id: "save-indicator",
-                        if *is_dirty.read() { "unsaved" } else { "saved" }
-                    }
-                    button {
-                        id: "toggle-mode-btn",
-                        class: "tb-btn",
-                        onclick: move |_| {
-                            let next = !*is_editing.peek();
-                            is_editing.set(next);
-                        },
-                        if *is_editing.read() { "Preview" } else { "Edit" }
-                    }
-                    button {
-                        id: "save-btn",
-                        class: "tb-btn primary",
-                        onclick: move |_| ops.send(AppOp::Save),
-                        "Save"
+                        title: if *is_dirty.read() { "Saving…" } else { "Saved" },
+                        "aria-label": if *is_dirty.read() { "Saving…" } else { "Saved" },
                     }
                     button {
                         id: "theme-btn",
@@ -94,43 +113,27 @@ pub fn EditorArea() -> Element {
                         onclick: move |_| toggle_theme(ctx),
                         IconSunMoon {}
                     }
+                    button {
+                        id: "panel-btn",
+                        class: if *panel_open.read() {
+                            "icon-btn active"
+                        } else {
+                            "icon-btn"
+                        },
+                        r#type: "button",
+                        title: "Note info",
+                        aria_label: "Toggle note info",
+                        aria_pressed: (*panel_open.read()).to_string(),
+                        onclick: move |_| {
+                            let next = !*panel_open.peek();
+                            panel_open.set(next);
+                        },
+                        IconPanelRight {}
+                    }
                 }
             }
             div { class: "editor-wrap",
-                textarea {
-                    id: "editor",
-                    class: if *is_editing.read() { "editor" } else { "editor hidden" },
-                    spellcheck: "false",
-                    value: "{content}",
-                    oninput: move |e| {
-                        content.set(strip_leading_heading(&e.value()));
-                        mark_dirty(ctx, ops);
-                    },
-                    onkeydown: move |e| {
-                        if e.data().key() == Key::Tab {
-                            e.prevent_default();
-                            let mut c = content.peek().clone();
-                            c.push_str("  ");
-                            content.set(c);
-                            mark_dirty(ctx, ops);
-                            return;
-                        }
-                        let key = e.data().key();
-                        let mods = e.data().modifiers();
-                        let is_s = matches!(key, Key::Character(ref c) if c.eq_ignore_ascii_case("s"));
-                        if is_s
-                            && (mods.contains(Modifiers::CONTROL) || mods.contains(Modifiers::META))
-                        {
-                            e.prevent_default();
-                            ops.send(AppOp::Save);
-                        }
-                    },
-                }
-                div {
-                    id: "preview",
-                    class: if *is_editing.read() { "preview hidden" } else { "preview" },
-                    dangerous_inner_html: "{preview_html}",
-                }
+                MarkdownEditor { image_srcs: image_srcs }
             }
         }
     }

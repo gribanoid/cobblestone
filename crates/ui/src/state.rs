@@ -26,7 +26,6 @@ pub struct AppCtx {
     pub active_content: Signal<String>,
     pub persisted_title: Signal<String>,
     pub graph: Signal<Option<NoteGraph>>,
-    pub is_editing: Signal<bool>,
     pub is_dirty: Signal<bool>,
     /// Bumps on every edit; autosave only commits if gen still matches.
     pub dirty_gen: Signal<u64>,
@@ -37,6 +36,10 @@ pub struct AppCtx {
     pub context_menu: Signal<Option<ContextMenuState>>,
     pub drag: Signal<Option<DragState>>,
     pub tree_sort: Signal<TreeSort>,
+    /// Right metadata panel (hidden by default).
+    pub panel_open: Signal<bool>,
+    /// Line for the editor to insert at the caret (e.g. a saved image embed).
+    pub editor_insert: Signal<Option<String>>,
 }
 
 impl AppCtx {
@@ -53,7 +56,6 @@ impl AppCtx {
             active_content: use_signal(String::new),
             persisted_title: use_signal(String::new),
             graph: use_signal(|| None),
-            is_editing: use_signal(|| true),
             is_dirty: use_signal(|| false),
             dirty_gen: use_signal(|| 0u64),
             theme: use_signal(Theme::load),
@@ -63,6 +65,8 @@ impl AppCtx {
             context_menu: use_signal(|| None),
             drag: use_signal(|| None),
             tree_sort: use_signal(|| TreeSort::NameAsc),
+            panel_open: use_signal(|| false),
+            editor_insert: use_signal(|| None),
         };
         use_context_provider(|| ctx);
         ctx
@@ -161,6 +165,7 @@ pub enum RenameKind {
 pub enum DeleteKind {
     Note { slug: String, was_active: bool },
     Folder { path: String },
+    File { path: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,6 +190,9 @@ pub enum ContextAction {
     RenameFolder { path: String },
     DeleteNote { slug: String },
     DeleteFolder { path: String },
+    DeleteFile { path: String },
+    /// Insert `text` as its own line at the editor caret.
+    InsertInNote { text: String },
     Copy { text: String },
 }
 

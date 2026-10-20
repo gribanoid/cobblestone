@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::models::NoteGraph;
+use crate::models::{LinkedNote, NoteGraph};
 use crate::ops::{AppOp, Ops};
 use crate::state::AppCtx;
 use crate::util::note_parent_folder;
@@ -14,6 +14,17 @@ pub fn RightPanel() -> Element {
     let active = ctx.active_slug;
     let notes = ctx.notes;
     let graph = ctx.graph;
+    let panel_open = ctx.panel_open;
+
+    if !*panel_open.read() {
+        return rsx! {
+            aside {
+                class: "right-panel right-panel-collapsed",
+                id: "right-panel",
+                "aria-hidden": "true",
+            }
+        };
+    }
 
     let Some(slug) = active.read().clone() else {
         return rsx! {
@@ -103,7 +114,7 @@ pub fn RightPanel() -> Element {
 }
 
 #[component]
-fn LinkSection(title: String, empty: String, links: Vec<crate::models::LinkedNote>) -> Element {
+fn LinkSection(title: String, empty: String, links: Vec<LinkedNote>) -> Element {
     let ops = use_context::<Ops>();
     rsx! {
         section { class: "panel-section",

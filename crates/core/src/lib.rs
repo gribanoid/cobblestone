@@ -244,6 +244,21 @@ impl Store {
         Ok(())
     }
 
+    /// Delete a non-note file (attachment) by vault-relative path.
+    pub fn delete_file(&self, rel: &str) -> Result<()> {
+        let rel = rel.trim().replace('\\', "/");
+        let rel = rel.trim_start_matches('/');
+        validate_path_components(rel)?;
+        let path = self.root.join(rel);
+        if !path.is_file() {
+            bail!("File '{rel}' not found");
+        }
+        if !is_attachment_file(&path) {
+            bail!("Only attachments can be deleted this way: '{rel}'");
+        }
+        fs::remove_file(&path).with_context(|| format!("Cannot delete '{rel}'"))
+    }
+
     pub fn exists(&self, name: &str) -> bool {
         self.note_file_path(name)
             .ok()
@@ -266,6 +281,121 @@ impl Store {
             }
             _ => Ok(file),
         }
+    }
+
+    /// Directory for pasted / attached images: `<vault>/attachments`.
+    pub fn attachments_dir(&self) -> PathBuf {
+        self.root.join("attachments")
+    }
+
+    /// Save raw bytes into `folder` (vault-relative; `None` / `""` = vault root),
+    /// returning the vault-relative path. The file name is made unique across
+    /// the whole vault so a bare `![[name]]` embed always resolves to it.
+    /// An empty `filename` gets the Obsidian default `Pasted image <stamp>.png`.
+    pub fn save_attachment(
+        &self,
+        folder: Option<&str>,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<String> {
+        let dir = match folder.map(str::trim).filter(|f| !f.is_empty()) {
+            Some(f) => self.root.join(normalize_folder_path(f)?),
+            None => self.root.clone(),
+        };
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("Cannot create {}", dir.display()))?;
+        let safe = if filename.trim().is_empty() {
+            pasted_image_filename("png")
+        } else {
+            sanitize_attachment_name(filename)?
+        };
+        let taken = self.attachment_names()?;
+        let dest = unique_attachment_path(&dir, &safe, &taken)?;
+        fs::write(&dest, bytes)
+            .with_context(|| format!("Cannot write attachment {}", dest.display()))?;
+        let rel = dest
+            .strip_prefix(&self.root)
+            .context("Attachment outside vault")?;
+        Ok(rel.to_string_lossy().replace('\\', "/"))
+    }
+
+    /// Lower-cased file names of every attachment in the vault.
+    fn attachment_names(&self) -> Result<std::collections::HashSet<String>> {
+        let mut out = std::collections::HashSet::new();
+        for path in self.attachment_files()? {
+            if let Some(n) = path.file_name().and_then(|n| n.to_str()) {
+                out.insert(n.to_lowercase());
+            }
+        }
+        Ok(out)
+    }
+
+    fn attachment_files(&self) -> Result<Vec<PathBuf>> {
+        fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if entry.file_name().to_string_lossy().starts_with('.') {
+                    continue;
+                }
+                if path.is_dir() {
+                    walk(&path, out)?;
+                } else if is_attachment_file(&path) {
+                    out.push(path);
+                }
+            }
+            Ok(())
+        }
+        let mut out = Vec::new();
+        walk(&self.root, &mut out)?;
+        Ok(out)
+    }
+
+    /// Resolve an embed target to a file inside the vault, Obsidian-style:
+    /// a path with `/` is vault-relative; a bare name is looked up in the
+    /// vault root, then `attachments/`, then anywhere (shortest path wins).
+    pub fn attachment_path(&self, target: &str) -> Result<PathBuf> {
+        let target = target.trim().trim_start_matches('/').replace('\\', "/");
+        if target.is_empty() {
+            bail!("Invalid attachment path");
+        }
+        validate_path_components(&target)?;
+        let root = fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+        let inside = |p: PathBuf| -> Result<PathBuf> {
+            let canon = fs::canonicalize(&p).with_context(|| format!("Attachment not found: {target}"))?;
+            if !canon.starts_with(&root) {
+                bail!("Attachment path escaped the vault");
+            }
+            Ok(canon)
+        };
+        if target.contains('/') {
+            return inside(self.root.join(&target));
+        }
+        for candidate in [self.root.join(&target), self.attachments_dir().join(&target)] {
+            if candidate.is_file() {
+                return inside(candidate);
+            }
+        }
+        let wanted = target.to_lowercase();
+        let found = self
+            .attachment_files()?
+            .into_iter()
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.to_lowercase() == wanted)
+            })
+            .min_by_key(|p| p.components().count());
+        match found {
+            Some(p) => inside(p),
+            None => bail!("Attachment not found: {target}"),
+        }
+    }
+
+    /// Read an attachment's bytes (vault-relative path or bare name).
+    pub fn read_attachment(&self, rel: &str) -> Result<Vec<u8>> {
+        let path = self.attachment_path(rel)?;
+        fs::read(&path).with_context(|| format!("Attachment not found: {rel}"))
     }
 
     fn note_file_path(&self, name: &str) -> Result<PathBuf> {
@@ -394,6 +524,25 @@ pub enum VaultNode {
         preview: String,
         tags: Vec<String>,
     },
+    /// Non-note file shown in the tree (images, PDFs — Obsidian attachments).
+    File {
+        name: String,
+        /// Vault-relative path including the extension.
+        path: String,
+        modified: String,
+        size: u64,
+    },
+}
+
+/// Extensions listed in the vault tree besides `.md` notes.
+pub const ATTACHMENT_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "pdf",
+];
+
+fn is_attachment_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ATTACHMENT_EXTS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
 // ---------------------------------------------------------------------------
@@ -613,14 +762,18 @@ fn collect_notes_recursive(root: &Path, dir: &Path, out: &mut Vec<Note>) -> Resu
 fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
     let mut folders = Vec::new();
     let mut notes = Vec::new();
+    let mut files = Vec::new();
 
     for entry in
         fs::read_dir(dir).with_context(|| format!("Cannot read directory: {}", dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
         if path.is_dir() {
-            let name = entry.file_name().to_string_lossy().to_string();
             let rel = relative_note_id(root, &path)?;
             let children = read_tree_dir(root, &path)?;
             folders.push(VaultNode::Folder {
@@ -641,25 +794,35 @@ fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
                 }),
                 Err(e) => eprintln!("warning: skipping {}: {e}", path.display()),
             }
+        } else if is_attachment_file(&path) {
+            let meta = entry.metadata().ok();
+            let rel = path
+                .strip_prefix(root)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| name.clone());
+            files.push(VaultNode::File {
+                name,
+                path: rel,
+                modified: meta
+                    .as_ref()
+                    .and_then(|m| m.modified().ok())
+                    .map(format_file_time)
+                    .unwrap_or_default(),
+                size: meta.map(|m| m.len()).unwrap_or(0),
+            });
         }
     }
 
-    folders.sort_by(|a, b| folder_name(a).cmp(folder_name(b)));
-    notes.sort_by(|a, b| note_title(a).cmp(note_title(b)));
-    Ok(folders.into_iter().chain(notes).collect())
+    folders.sort_by(|a, b| node_label(a).cmp(node_label(b)));
+    notes.sort_by(|a, b| node_label(a).cmp(node_label(b)));
+    files.sort_by(|a, b| node_label(a).cmp(node_label(b)));
+    Ok(folders.into_iter().chain(notes).chain(files).collect())
 }
 
-fn folder_name(node: &VaultNode) -> &str {
+fn node_label(node: &VaultNode) -> &str {
     match node {
-        VaultNode::Folder { name, .. } => name,
+        VaultNode::Folder { name, .. } | VaultNode::File { name, .. } => name,
         VaultNode::Note { title, .. } => title,
-    }
-}
-
-fn note_title(node: &VaultNode) -> &str {
-    match node {
-        VaultNode::Note { title, .. } => title,
-        VaultNode::Folder { name, .. } => name,
     }
 }
 
@@ -682,6 +845,61 @@ pub fn resolve_note_id(name: &str) -> Result<String> {
     }
     validate_path_components(&name)?;
     Ok(name)
+}
+
+fn sanitize_attachment_name(filename: &str) -> Result<String> {
+    let name = filename.trim().replace('\\', "/");
+    let name = name.rsplit('/').next().unwrap_or(&name).trim();
+    if name.is_empty() || name == "." || name == ".." {
+        bail!("Attachment filename cannot be empty");
+    }
+    let safe: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | '\0' => '-',
+            c if c.is_control() => '-',
+            c => c,
+        })
+        .collect();
+    if safe.is_empty() {
+        bail!("Attachment filename cannot be empty");
+    }
+    Ok(safe)
+}
+
+/// `taken`: lower-cased names already used anywhere in the vault.
+fn unique_attachment_path(
+    dir: &Path,
+    filename: &str,
+    taken: &std::collections::HashSet<String>,
+) -> Result<PathBuf> {
+    let free = |name: &str| !taken.contains(&name.to_lowercase()) && !dir.join(name).exists();
+    if free(filename) {
+        return Ok(dir.join(filename));
+    }
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image");
+    let ext = Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png");
+    for i in 1..10_000 {
+        let alt = format!("{stem} {i}.{ext}");
+        if free(&alt) {
+            return Ok(dir.join(alt));
+        }
+    }
+    bail!("Cannot allocate unique attachment name for '{filename}'");
+}
+
+/// Obsidian-style default name for a clipboard paste.
+pub fn pasted_image_filename(ext: &str) -> String {
+    let stamp = Local::now().format("%Y%m%d%H%M%S");
+    let ext = ext.trim_start_matches('.').to_ascii_lowercase();
+    let ext = if ext.is_empty() { "png" } else { ext.as_str() };
+    format!("Pasted image {stamp}.{ext}")
 }
 
 fn normalize_folder_path(path: &str) -> Result<String> {
@@ -1095,6 +1313,33 @@ mod tests {
         });
         assert!(folder.is_some());
         assert_eq!(folder.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn attachments_listed_in_tree_and_deletable() {
+        let (_dir, store) = temp_store();
+        store.create_folder("research").unwrap();
+        let rel = store.save_attachment(Some("research"), "", b"png-bytes").unwrap();
+        assert!(rel.starts_with("research/Pasted image "));
+        let tree = store.list_tree().unwrap();
+        let files = tree
+            .iter()
+            .find_map(|n| match n {
+                VaultNode::Folder { name, children, .. } if name == "research" => Some(children),
+                _ => None,
+            })
+            .expect("research folder in tree");
+        assert!(matches!(&files[0], VaultNode::File { path, .. } if *path == rel));
+
+        // Bare `![[name]]` resolves anywhere; names stay unique vault-wide.
+        let bare = rel.rsplit('/').next().unwrap();
+        assert_eq!(store.read_attachment(bare).unwrap(), b"png-bytes");
+        let again = store.save_attachment(None, bare, b"x").unwrap();
+        assert_ne!(again.to_lowercase(), bare.to_lowercase());
+
+        store.delete_file(&rel).unwrap();
+        assert!(store.read_attachment(&rel).is_err());
+        assert!(store.delete_file("../etc/passwd").is_err());
     }
 
     #[test]

@@ -19,7 +19,7 @@ required-features = ["web"]
 [features]
 default  = []
 web      = ["dioxus/web", "dep:gloo-net", "dep:gloo-timers"]
-desktop  = ["dioxus/desktop", "dep:cobblestone-core", "dep:tokio", "dep:arboard"]
+desktop  = ["dioxus/desktop", "dep:cobblestone-core", "dep:tokio", "dep:arboard", "cobblestone-editor/desktop"]
 
 [dependencies]
 dioxus = { version = "0.7.10", default-features = true, features = [] }
@@ -35,6 +35,7 @@ gloo-net = { version = "0.6", optional = true, features = ["http", "json"] }
 gloo-timers = { version = "0.3", optional = true, features = ["futures"] }
 tokio = { version = "1", optional = true, features = ["time", "rt"] }
 arboard = { version = "3", optional = true }
+cobblestone-editor = { path = "../editor" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

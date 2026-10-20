@@ -56,6 +56,13 @@ pub enum VaultNode {
         preview: String,
         tags: Vec<String>,
     },
+    /// Attachment (image / PDF) — vault-relative `path` with extension.
+    File {
+        name: String,
+        path: String,
+        modified: String,
+        size: u64,
+    },
 }
 
 #[cfg(feature = "desktop")]
@@ -102,6 +109,17 @@ impl From<cobblestone_core::VaultNode> for VaultNode {
                 size,
                 preview,
                 tags,
+            },
+            cobblestone_core::VaultNode::File {
+                name,
+                path,
+                modified,
+                size,
+            } => Self::File {
+                name,
+                path,
+                modified,
+                size,
             },
         }
     }

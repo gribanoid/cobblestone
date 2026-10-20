@@ -698,6 +698,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cobblestone-editor"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "dioxus",
+ "image",
+]
+
+[[package]]
 name = "cobblestone-ui"
 version = "0.1.0"
 dependencies = [
@@ -705,6 +714,7 @@ dependencies = [
  "arboard",
  "async-trait",
  "cobblestone-core",
+ "cobblestone-editor",
  "dioxus",
  "futures",
  "gloo-net",

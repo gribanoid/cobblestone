@@ -3,10 +3,12 @@
 use dioxus::prelude::*;
 
 use crate::actions::{
-    folder_menu_items, note_menu_items, open_context_menu, root_menu_items, toggle_folder,
+    file_menu_items, folder_menu_items, note_menu_items, open_context_menu, root_menu_items,
+    toggle_folder,
 };
 use super::drag_preview::suppress_native_drag_ghost;
-use crate::icons::{IconChevron, IconFile, IconFolder};
+use crate::backend::SharedBackend;
+use crate::icons::{IconChevron, IconFile, IconFolder, IconImage};
 use crate::models::VaultNode;
 use crate::ops::{AppOp, Ops};
 use crate::state::{AppCtx, DragPayload, DragState};
@@ -96,6 +98,87 @@ fn TreeNode(
         VaultNode::Note { slug, title, .. } => {
             rsx! {
                 NoteNode { slug, title, active, drag }
+            }
+        }
+        VaultNode::File { name, path, .. } => {
+            rsx! {
+                FileNode { name, path }
+            }
+        }
+    }
+}
+
+/// Attachment row (image / PDF). Hover shows an image preview (Obsidian-style);
+/// right-click → insert / copy embed / delete.
+#[component]
+fn FileNode(name: String, path: String) -> Element {
+    let ctx = use_context::<AppCtx>();
+    let backend = use_context::<SharedBackend>();
+    let mut preview = use_signal(|| None::<(String, f64, f64)>);
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_uppercase())
+        .unwrap_or_default();
+    let stem = name
+        .rsplit_once('.')
+        .map(|(s, _)| s.to_string())
+        .unwrap_or_else(|| name.clone());
+    let previewable = ext != "PDF";
+
+    rsx! {
+        div {
+            class: "tree-file",
+            title: "{path}",
+            onmouseenter: {
+                let path = path.clone();
+                move |e: Event<MouseData>| {
+                    if !previewable {
+                        return;
+                    }
+                    let c = e.data().client_coordinates();
+                    let backend = backend.clone();
+                    let path = path.clone();
+                    spawn(async move {
+                        if let Ok(src) = backend.attachment_src(&path).await {
+                            preview.set(Some((src, c.x, c.y)));
+                        }
+                    });
+                }
+            },
+            onmouseleave: move |_| preview.set(None),
+            onclick: {
+                let name = name.clone();
+                move |_| {
+                    let mut ctx = ctx;
+                    if ctx.active_slug.peek().is_some() {
+                        ctx.editor_insert.set(Some(format!("![[{name}]]")));
+                    }
+                }
+            },
+            oncontextmenu: {
+                let path = path.clone();
+                move |e| {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    preview.set(None);
+                    open_context_menu(
+                        ctx,
+                        e.data().client_coordinates().x,
+                        e.data().client_coordinates().y,
+                        file_menu_items(&path),
+                    );
+                }
+            },
+            span { class: "tree-spacer" }
+            span { class: "tree-note-icon", IconImage {} }
+            span { class: "tree-note-title", "{stem}" }
+            span { class: "tree-file-ext", "{ext}" }
+            if let Some((src, x, y)) = preview() {
+                div {
+                    class: "tree-file-preview",
+                    style: "left: {x + 24.0}px; top: {y - 20.0}px",
+                    img { src: "{src}", alt: "{name}" }
+                }
             }
         }
     }

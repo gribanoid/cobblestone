@@ -33,8 +33,11 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
         .route("/folders/move", post(api_move_folder))
         .route("/folders/rename", post(api_rename_folder))
         .route("/folders/delete", post(api_delete_folder))
+        .route("/files/delete", post(api_delete_file))
         .route("/notes/rename", post(api_rename_note))
-        .route("/search", get(api_search));
+        .route("/search", get(api_search))
+        .route("/attachments", post(api_upload_attachment))
+        .route("/attachments/{*name}", get(api_get_attachment));
 
     let app = Router::new()
         .nest("/api", api)
@@ -270,6 +273,16 @@ async fn api_delete_folder(
     }
 }
 
+async fn api_delete_file(
+    State(store): State<AppState>,
+    Json(body): Json<DeleteFolderBody>,
+) -> impl IntoResponse {
+    match store.delete_file(&body.path) {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
 #[derive(Deserialize)]
 struct SearchQuery {
     query: String,
@@ -293,6 +306,103 @@ async fn api_graph(State(store): State<AppState>, Path(slug): Path<String>) -> i
         Ok(graph) => Json(graph).into_response(),
         Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct UploadAttachmentBody {
+    #[serde(default)]
+    folder: Option<String>,
+    filename: String,
+    data_base64: String,
+}
+
+async fn api_upload_attachment(
+    State(store): State<AppState>,
+    Json(body): Json<UploadAttachmentBody>,
+) -> impl IntoResponse {
+    let bytes = match decode_base64(&body.data_base64) {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    match store.save_attachment(body.folder.as_deref(), &body.filename, &bytes) {
+        Ok(rel) => Json(serde_json::json!({ "name": rel })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+async fn api_get_attachment(
+    State(store): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match store.read_attachment(&name) {
+        Ok(bytes) => {
+            let mime = mime_from_name(&name);
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, mime)],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(_) => (StatusCode::NOT_FOUND, "Attachment not found").into_response(),
+    }
+}
+
+fn mime_from_name(name: &str) -> &'static str {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else if lower.ends_with(".svg") {
+        "image/svg+xml"
+    } else if lower.ends_with(".avif") {
+        "image/avif"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    fn val(b: u8) -> Result<u32, String> {
+        Ok(match b {
+            b'A'..=b'Z' => (b - b'A') as u32,
+            b'a'..=b'z' => (b - b'a' + 26) as u32,
+            b'0'..=b'9' => (b - b'0' + 52) as u32,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return Err("Invalid base64 character".into()),
+        })
+    }
+    let cleaned: Vec<u8> = input
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect();
+    if cleaned.len() % 4 != 0 {
+        return Err("Invalid base64 length".into());
+    }
+    let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
+    for chunk in cleaned.chunks(4) {
+        let a = val(chunk[0])?;
+        let b = val(chunk[1])?;
+        let pad2 = chunk[2] == b'=';
+        let pad3 = chunk[3] == b'=';
+        let c = if pad2 { 0 } else { val(chunk[2])? };
+        let d = if pad3 { 0 } else { val(chunk[3])? };
+        let n = (a << 18) | (b << 12) | (c << 6) | d;
+        out.push((n >> 16) as u8);
+        if !pad2 {
+            out.push((n >> 8) as u8);
+        }
+        if !pad3 {
+            out.push(n as u8);
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------

@@ -129,6 +129,28 @@ pub fn IconFile() -> Element {
     }
 }
 
+/// Lucide `image` — attachment rows in the vault tree.
+#[component]
+pub fn IconImage() -> Element {
+    rsx! {
+        svg {
+            class: "lucide",
+            xmlns: "http://www.w3.org/2000/svg",
+            width: "13",
+            height: "13",
+            view_box: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "1.75",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            rect { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2" }
+            circle { cx: "9", cy: "9", r: "2" }
+            path { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }
+        }
+    }
+}
+
 #[component]
 pub fn IconArrowUpDown() -> Element {
     rsx! {
@@ -167,6 +189,27 @@ pub fn IconChevronsUpDown() -> Element {
             stroke_linejoin: "round",
             path { d: "m7 15 5 5 5-5" }
             path { d: "m7 9 5-5 5 5" }
+        }
+    }
+}
+
+/// Lucide `panel-right` — toggle note metadata sidebar.
+#[component]
+pub fn IconPanelRight() -> Element {
+    rsx! {
+        svg {
+            class: "lucide",
+            xmlns: "http://www.w3.org/2000/svg",
+            width: "16",
+            height: "16",
+            view_box: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "1.75",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            rect { width: "18", height: "18", x: "3", y: "3", rx: "2" }
+            path { d: "M15 3v18" }
         }
     }
 }
