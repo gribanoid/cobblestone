@@ -1,0 +1,19 @@
+# Cobblestone notices
+
+Cobblestone is an independent MIT-licensed project. See [LICENSE](LICENSE).
+Product and plugin names below identify upstream references. Their trademarks
+belong to their respective owners.
+
+## Upstream references
+
+The plugin host runs Rust implementations. These upstream projects document
+the API and behavior used as references.
+
+| Reference | Version or revision | Upstream license |
+| --- | --- | --- |
+| [Obsidian API](https://github.com/obsidianmd/obsidian-api/tree/9abd960) | `9abd960` | MIT |
+| [Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks/tree/8.6.0) | 8.6.0 | MIT |
+| [QuickAdd](https://github.com/chhoumann/quickadd/tree/2.32.1) | 2.32.1 | MIT |
+| [Periodic Notes](https://github.com/liamcain/obsidian-periodic-notes/tree/0.0.17) | 0.0.17 | MIT |
+| [Templater](https://github.com/SilentVoid13/Templater/tree/2.26.0) | 2.26.0 | AGPL-3.0 |
+| [Omnisearch](https://github.com/scambier/obsidian-omnisearch/tree/1.31.0) | 1.31.0 | GPL-3.0 |
