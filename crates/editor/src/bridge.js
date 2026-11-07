@@ -71,12 +71,12 @@ if (!window.__cbMdShortcutBound) {
       e.preventDefault(); e.stopPropagation(); send('redo');
     } else if (code === 'KeyA') {
       e.preventDefault(); e.stopPropagation(); send('selectall');
-    } else if (code === 'KeyC') {
+    } else if (desktopClipboard && code === 'KeyC') {
       const text = copyText();
       if (!text && !hasSel) return;
       e.preventDefault(); e.stopPropagation();
       send('copy\n' + text);
-    } else if (code === 'KeyX') {
+    } else if (desktopClipboard && code === 'KeyX') {
       const text = copyText();
       if (!text && !hasSel) return;
       e.preventDefault(); e.stopPropagation();
@@ -86,7 +86,7 @@ if (!window.__cbMdShortcutBound) {
         const s = lineSel();
         if (s && s.a !== s.b) send('cutline|' + s.a + '|' + s.b);
       }
-    } else if (code === 'KeyV') {
+    } else if (desktopClipboard && code === 'KeyV') {
       e.preventDefault(); e.stopPropagation();
       send('paste_req');
     }
@@ -96,9 +96,14 @@ if (!window.__cbMdShortcutBound) {
     if (!root) return;
     const text = copyText();
     if (!text && !root.classList.contains('cb-md-has-sel')) return;
+    if (desktopClipboard) {
+      send('copy\n' + text);
+    } else {
+      if (!e.clipboardData) return;
+      e.clipboardData.setData('text/plain', text);
+    }
     e.preventDefault();
     e.stopPropagation();
-    send('copy\n' + text);
     if (isCut) {
       if (root.classList.contains('cb-md-has-sel')) send('cut');
       else {
@@ -116,9 +121,10 @@ if (!window.__cbMdShortcutBound) {
     for (let i = 0; i < items.length; i++) {
       if (items[i].type && items[i].type.indexOf('image/') === 0) return;
     }
+    const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+    if (!text && !desktopClipboard) return;
     e.preventDefault();
     e.stopPropagation();
-    const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
     if (text) send('paste\n' + text);
     else send('paste_req');
   }, true);

@@ -13,10 +13,39 @@ use crate::history::History;
 use crate::selection::{self, BlockRange};
 use crate::session::{cut_doc_sel, EditorCmd, EditorEffect, EditorSession};
 
+#[derive(Clone, Copy, PartialEq)]
+struct EditorText {
+    signal: Signal<String>,
+    on_change: Option<EventHandler<()>>,
+}
+
+impl EditorText {
+    fn set(mut self, text: String) {
+        if *self.signal.peek() == text {
+            return;
+        }
+        self.signal.set(text);
+        if let Some(on_change) = self.on_change {
+            on_change.call(());
+        }
+    }
+}
+
+impl std::ops::Deref for EditorText {
+    type Target = Signal<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.signal
+    }
+}
+
 /// Near-WYSIWYG Markdown editor (line-oriented blocks + fenced code).
 #[component]
 pub fn MarkdownEditor(
-    mut value: Signal<String>,
+    value: Signal<String>,
+    /// Called synchronously after the editor changes the text.
+    #[props(default)]
+    on_change: Option<EventHandler<()>>,
     #[props(default)] image_srcs: Signal<HashMap<String, String>>,
     #[props(default)] class: String,
     /// Cmd+V with an image on the clipboard; the host saves it and answers
@@ -28,6 +57,7 @@ pub fn MarkdownEditor(
     #[props(default)]
     insert_embed: Option<Signal<Option<String>>>,
 ) -> Element {
+    let value = EditorText { signal: value, on_change };
     // Open at the start of the file (remounts on note switch via host key).
     let focused = use_signal(|| Some(0usize));
     let focus_gen = use_signal(|| 0u64);
@@ -59,7 +89,11 @@ pub fn MarkdownEditor(
         let mut drag_anchor = drag_anchor;
         move || {
             spawn(async move {
-                let mut eval = document::eval(include_str!("bridge.js"));
+                #[cfg(feature = "desktop")]
+                let script = concat!("const desktopClipboard = true;\n", include_str!("bridge.js"));
+                #[cfg(not(feature = "desktop"))]
+                let script = concat!("const desktopClipboard = false;\n", include_str!("bridge.js"));
+                let mut eval = document::eval(script);
                 loop {
                     let Ok(op) = eval.recv::<String>().await else {
                         break;
@@ -371,7 +405,7 @@ fn shortcut_op(e: &Event<KeyboardData>) -> Option<&'static str> {
 /// Cmd/Ctrl shortcuts. Returns true if handled (caller should not run line logic).
 fn try_handle_shortcut(
     e: &Event<KeyboardData>,
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     focused: Signal<Option<usize>>,
     _focus_gen: Signal<u64>,
@@ -440,7 +474,7 @@ fn sync_doc_sel_clipboard(text: &str) {
 
 /// Build a session from UI signals, run `cmd`, write state back, apply effects.
 fn dispatch_session(
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     focused: Signal<Option<usize>>,
     caret: Signal<Option<usize>>,
@@ -478,7 +512,7 @@ fn dispatch_session(
 fn apply_session_to_signals(
     session: EditorSession,
     fx: &EditorEffect,
-    mut value: Signal<String>,
+    value: EditorText,
     mut history: Signal<History>,
     mut focused: Signal<Option<usize>>,
     mut caret: Signal<Option<usize>>,
@@ -518,7 +552,7 @@ fn apply_session_to_signals(
 }
 
 fn apply_select_all(
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     doc_sel: Signal<Option<BlockRange>>,
     focused: Signal<Option<usize>>,
@@ -539,7 +573,7 @@ fn apply_select_all(
 }
 
 fn cut_doc_selection(
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     doc_sel: Signal<Option<BlockRange>>,
     focused: Signal<Option<usize>>,
@@ -574,7 +608,7 @@ fn cut_doc_selection(
 }
 
 fn delete_doc_selection(
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     doc_sel: Signal<Option<BlockRange>>,
     focused: Signal<Option<usize>>,
@@ -600,7 +634,7 @@ fn delete_doc_selection(
 fn handle_paste(
     text: String,
     own_line: bool,
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     mut focused: Signal<Option<usize>>,
     _focus_gen: Signal<u64>,
@@ -651,7 +685,7 @@ fn handle_paste(
 fn handle_enter(
     a: usize,
     b: usize,
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     focused: Signal<Option<usize>>,
     caret: Signal<Option<usize>>,
@@ -677,7 +711,7 @@ fn handle_enter(
 fn cut_line_range(
     start: usize,
     end: usize,
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     focused: Signal<Option<usize>>,
     caret: Signal<Option<usize>>,
@@ -738,7 +772,7 @@ fn clear_native_line_selection() {
 }
 
 fn commit_doc(
-    mut value: Signal<String>,
+    value: EditorText,
     mut history: Signal<History>,
     focused: Signal<Option<usize>>,
     caret: Signal<Option<usize>>,
@@ -989,7 +1023,7 @@ fn line_selection_range() -> impl std::future::Future<Output = (usize, usize)> {
 }
 
 fn snapshot_doc(
-    value: Signal<String>,
+    value: EditorText,
     _focused: Signal<Option<usize>>,
     caret: Signal<Option<usize>>,
     source_reveal: Signal<Option<(usize, String)>>,
@@ -1005,7 +1039,7 @@ fn snapshot_doc(
 
 fn apply_doc(
     state: DocState,
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     coalesce: bool,
     mut focused: Signal<Option<usize>>,
@@ -1037,7 +1071,7 @@ fn apply_doc(
 }
 
 fn enter_reveal_at(
-    value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     index: usize,
     raw: String,
@@ -1083,7 +1117,7 @@ fn BlockRow(
     is_focused: bool,
     is_doc_selected: bool,
     image_srcs: Signal<HashMap<String, String>>,
-    mut value: Signal<String>,
+    value: EditorText,
     history: Signal<History>,
     mut focused: Signal<Option<usize>>,
     mut focus_gen: Signal<u64>,
@@ -1170,7 +1204,7 @@ fn BlockRow(
         if anchor == index {
             return;
         }
-        // Crossed into another row → Obsidian-style block range.
+        // Crossed into another row → vault-style block range.
         sel_dragged.set(true);
         let range = BlockRange::new(anchor, index);
         doc_sel.set(Some(range));
