@@ -108,10 +108,26 @@
 }
 
 .settings-select {
+  -webkit-appearance: none;
+  appearance: none;
   max-width: 100%;
   min-height: 32px;
-  padding-inline-end: 24px;
+  padding-inline-end: 30px;
   font: inherit;
+  cursor: pointer;
+}
+.settings-control:has(> .settings-select) { position: relative; }
+.settings-control:has(> .settings-select)::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border: solid var(--subtext);
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
 }
 .settings-select:hover, .settings-dialog .settings-button:hover { background: var(--overlay); }
 .settings-control kbd { font: 12px ui-monospace, monospace; white-space: nowrap; }
