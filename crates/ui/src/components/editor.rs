@@ -9,7 +9,7 @@ use crate::actions::{mark_dirty, toggle_theme};
 use crate::backend::SharedBackend;
 use crate::components::codemirror::{CodeMirrorEditor, use_codemirror};
 use crate::components::md_editor::MarkdownEditor;
-use crate::icons::{IconPanelRight, IconSquarePen, IconSunMoon};
+use crate::icons::{IconFile, IconPanelRight, IconSquarePen, IconSunMoon};
 use crate::markdown::{embed_image_names, render_note_body};
 use crate::models::NoteInfo;
 use crate::ops::{AppOp, Ops};
@@ -68,13 +68,21 @@ pub fn EditorArea() -> Element {
     });
 
     if active.read().is_none() {
-        let has_notes = !ctx.notes.read().is_empty();
+        let notes = ctx.notes.read();
+        let mut recent: Vec<_> = notes.iter().collect();
+        recent.sort_unstable_by(|a, b| b.modified.cmp(&a.modified).then(a.slug.cmp(&b.slug)));
+        recent.truncate(5);
+        let project = project_label.read();
         return rsx! {
             section { class: "welcome", id: "welcome",
                 div { class: "welcome-content",
                     header { class: "welcome-heading",
                         h1 { "Cobblestone" }
-                        p { "A local workspace for your Markdown notes." }
+                        if project.is_empty() || project.as_str() == "Cobblestone" {
+                            p { class: "welcome-project", "Your Markdown workspace" }
+                        } else {
+                            p { class: "welcome-project", "Project: {project}" }
+                        }
                     }
                     div { class: "welcome-actions",
                         button {
@@ -87,7 +95,7 @@ pub fn EditorArea() -> Element {
                             IconSquarePen {}
                             "New note"
                         }
-                        if has_notes {
+                        if !recent.is_empty() {
                             button {
                                 class: "welcome-button",
                                 r#type: "button",
@@ -96,22 +104,33 @@ pub fn EditorArea() -> Element {
                             }
                         }
                     }
-                    section { class: "welcome-shortcuts", aria_labelledby: "welcome-shortcuts-title",
-                        h2 { id: "welcome-shortcuts-title", "Keyboard shortcuts" }
-                        dl {
-                            if cfg!(feature = "desktop") {
-                                div {
-                                    dt { "Open the command palette" }
-                                    dd { kbd { "⌘ / Ctrl + P" } }
+                    section { class: "welcome-recent", aria_labelledby: "welcome-recent-title",
+                        h2 { id: "welcome-recent-title", "Recently edited" }
+                        if recent.is_empty() {
+                            p { class: "welcome-empty", "Your notes will appear here. Create a note to get started." }
+                        } else {
+                            ul {
+                                for note in recent {
+                                    {
+                                        let slug = note.slug.clone();
+                                        let location = note.slug.rsplit_once('/').map_or("Project root", |(folder, _)| folder);
+                                        rsx! {
+                                            li { key: "{note.slug}",
+                                                button {
+                                                    class: "welcome-note",
+                                                    r#type: "button",
+                                                    title: "{note.slug}",
+                                                    onclick: move |_| ops.send(AppOp::OpenNote(slug.clone())),
+                                                    IconFile {}
+                                                    span { class: "welcome-note-text",
+                                                        span { class: "welcome-note-title", "{note.title}" }
+                                                        span { class: "welcome-note-location", "{location}" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                            div {
-                                dt { "Switch between editing and reading" }
-                                dd { kbd { "⌘ / Ctrl + E" } }
-                            }
-                            div {
-                                dt { "Save the current note" }
-                                dd { kbd { "⌘ / Ctrl + S" } }
                             }
                         }
                     }
@@ -277,8 +296,8 @@ pub fn EditorArea() -> Element {
                 }
             }
             div { class: "status-bar",
-                span { "{project_label}" }
-                span { class: "status-bar-mode", "{mode.label()} · ⌘E reading · ⌘P commands" }
+                span { title: "{project_label}", "{project_label}" }
+                span { class: "status-bar-mode", "{mode.label()}" }
             }
         }
     }

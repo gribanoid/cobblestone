@@ -13,12 +13,12 @@ pub fn ContextMenu() -> Element {
     let Some(state) = menu.read().clone() else {
         return rsx! {};
     };
+    let item_count = state.items.len();
 
     rsx! {
         div {
             class: "tree-context-menu",
-            style: "left: {state.x}px; top: {state.y}px;",
-            onmounted: move |_| {},
+            style: "--menu-x: {state.x}px; --menu-y: {state.y}px; --menu-items: {item_count};",
             for (i, item) in state.items.iter().enumerate() {
                 {
                     let action = item.action.clone();
