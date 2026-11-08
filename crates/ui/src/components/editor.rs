@@ -10,7 +10,9 @@ use crate::backend::SharedBackend;
 use crate::components::brand::BrandIcon;
 use crate::components::codemirror::{CodeMirrorEditor, use_codemirror};
 use crate::components::md_editor::MarkdownEditor;
-use crate::icons::{IconFile, IconPanelRight, IconSquarePen, IconSunMoon};
+use crate::icons::{
+    IconBookOpen, IconFile, IconPanelRight, IconPencil, IconSquarePen, IconSunMoon,
+};
 use crate::markdown::{embed_image_names, render_note_body};
 use crate::models::NoteInfo;
 use crate::ops::{AppOp, Ops};
@@ -27,7 +29,6 @@ pub fn EditorArea() -> Element {
     let is_dirty = ctx.is_dirty;
     let mut panel_open = ctx.panel_open;
     let editor_mode = ctx.editor_mode;
-    let mut note_menu_open = ctx.note_menu_open;
     let project_label = ctx.project_label;
 
     let codemirror_ready = use_codemirror();
@@ -145,6 +146,11 @@ pub fn EditorArea() -> Element {
     }
 
     let mode = *editor_mode.read();
+    let view_action = if mode.is_editing() {
+        "Open reading view"
+    } else {
+        "Edit note"
+    };
     let slug = active.peek().clone().unwrap_or_default();
     let note_key = format!("{slug}:{}", ctx.editor_revision.read());
     let preview_html = if mode == EditorMode::Reading {
@@ -193,11 +199,6 @@ pub fn EditorArea() -> Element {
                 }
                 div { class: "toolbar-actions",
                     span {
-                        class: "mode-badge",
-                        title: "Editor mode",
-                        "{mode.label()}"
-                    }
-                    span {
                         class: if *is_dirty.read() {
                             "edit-indicator unsaved"
                         } else {
@@ -207,29 +208,16 @@ pub fn EditorArea() -> Element {
                         title: if *is_dirty.read() { "Saving…" } else { "Saved" },
                         "aria-label": if *is_dirty.read() { "Saving…" } else { "Saved" },
                     }
-                    div { class: "note-menu-wrap",
-                        button {
-                            id: "note-menu-btn",
-                            class: if *note_menu_open.read() { "icon-btn active" } else { "icon-btn" },
-                            r#type: "button",
-                            title: "Note options",
-                            aria_label: "Note options",
-                            onclick: move |e| {
-                                e.stop_propagation();
-                                let open = *note_menu_open.peek();
-                                note_menu_open.set(!open);
-                            },
-                            "⋯"
-                        }
-                        if *note_menu_open.read() {
-                            div { class: "note-menu",
-                                button {
-                                    class: "note-menu-item",
-                                    r#type: "button",
-                                    onclick: move |_| ops.send(AppOp::ToggleReading),
-                                    if mode.is_editing() { "Reading view" } else { "Edit note" }
-                                }
-                            }
+                    button {
+                        class: "icon-btn",
+                        r#type: "button",
+                        title: view_action,
+                        aria_label: view_action,
+                        onclick: move |_| ops.send(AppOp::ToggleReading),
+                        if mode.is_editing() {
+                            IconBookOpen {}
+                        } else {
+                            IconPencil {}
                         }
                     }
                     button {
@@ -302,7 +290,6 @@ pub fn EditorArea() -> Element {
             }
             div { class: "status-bar",
                 span { title: "{project_label}", "{project_label}" }
-                span { class: "status-bar-mode", "{mode.label()}" }
             }
         }
     }

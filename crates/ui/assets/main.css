@@ -1016,23 +1016,7 @@ input, textarea { font: inherit; outline: none; color: inherit }
 .notice-toast:has(+ .error-toast) { bottom: 64px; }
 .error-toast, .notice-toast { max-width: calc(100% - 24px); overflow-wrap: anywhere; }
 
-/* ─── Editor modes / projects (plugin-platform) ───────────────────────────── */
-.mode-badge {
-  font-size: 11px; color: var(--subtext); padding: 2px 8px;
-  border: 1px solid var(--border); border-radius: 4px; white-space: nowrap;
-}
-.note-menu-wrap { position: relative; }
-.note-menu {
-  position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50;
-  min-width: 180px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 6px; box-shadow: 0 8px 24px var(--shadow); padding: 4px;
-}
-.note-menu-item {
-  display: block; width: 100%; text-align: left; background: transparent;
-  border: none; color: var(--text); font-size: 13px; padding: 8px 10px;
-  border-radius: 4px; cursor: pointer;
-}
-.note-menu-item:hover { background: var(--surface2); }
+/* ─── Editor modes / projects ─────────────────────────────────────────────── */
 .source-editor {
   width: 100%; min-width: 0; resize: none;
   background: var(--bg); color: var(--text); border: none; padding: 16px 20px;
@@ -1058,7 +1042,6 @@ input, textarea { font: inherit; outline: none; color: inherit }
   color: var(--subtext); background: var(--surface);
 }
 .status-bar > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.status-bar-mode { flex-shrink: 0; max-width: 60%; }
 .sidebar-footer {
   display: flex;
   align-items: center;
@@ -1154,5 +1137,4 @@ input, textarea { font: inherit; outline: none; color: inherit }
   .toolbar { flex-wrap: wrap; padding: 6px 10px; gap: 6px; }
   .note-title-input { flex-basis: 100%; }
   .toolbar-actions { width: 100%; justify-content: space-between; }
-  .note-menu { right: auto; left: 0; min-width: max-content; }
 }

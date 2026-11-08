@@ -247,7 +247,6 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
             ctx.editor_insert.set(None);
             ctx.editor_mode
                 .set(ctx.editor_preferences.peek().editing_mode());
-            ctx.note_menu_open.set(false);
             recent::record(ctx, &slug).await;
             refresh_graph(ctx, backend, &slug).await;
         }
@@ -293,7 +292,6 @@ pub fn toggle_reading(mut ctx: AppCtx) {
         ctx.editor_preferences.peek().editing_mode()
     };
     ctx.editor_mode.set(mode);
-    ctx.note_menu_open.set(false);
 }
 
 /// Run a plugin command on the desktop host.

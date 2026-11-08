@@ -56,8 +56,6 @@ pub struct AppCtx {
     pub editor_preferences: Signal<EditorPreferences>,
     /// Current project / vault label (status bar / sidebar).
     pub project_label: Signal<String>,
-    /// Overflow menu (⋯) open on the note toolbar.
-    pub note_menu_open: Signal<bool>,
 }
 
 impl AppCtx {
@@ -94,7 +92,6 @@ impl AppCtx {
             editor_mode: use_signal(EditorMode::default),
             editor_preferences: use_signal(EditorPreferences::default),
             project_label: use_signal(|| "Cobblestone".into()),
-            note_menu_open: use_signal(|| false),
         };
         use_context_provider(|| ctx);
         ctx
@@ -192,14 +189,6 @@ pub enum EditorMode {
 }
 
 impl EditorMode {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::LivePreview => "Live Preview (beta)",
-            Self::Source => "CodeMirror",
-            Self::Reading => "Reading",
-        }
-    }
-
     pub fn is_editing(self) -> bool {
         !matches!(self, Self::Reading)
     }
@@ -218,7 +207,7 @@ impl Default for EditorPreferences {
     fn default() -> Self {
         Self {
             live_preview: false,
-            line_numbers: true,
+            line_numbers: false,
             line_wrapping: true,
             tab_width: 2,
         }

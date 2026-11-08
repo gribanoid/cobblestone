@@ -2,6 +2,40 @@
 
 use dioxus::prelude::*;
 
+#[component]
+pub fn IconBookOpen() -> Element {
+    rsx! {
+        svg {
+            class: "lucide",
+            view_box: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "1.75",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            "aria-hidden": "true",
+            path { d: "M12 6c-2-2-5-3-9-2v15c4-1 7 0 9 2 2-2 5-3 9-2V4c-4-1-7 0-9 2v15" }
+        }
+    }
+}
+
+#[component]
+pub fn IconPencil() -> Element {
+    rsx! {
+        svg {
+            class: "lucide",
+            view_box: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            stroke_width: "1.75",
+            stroke_linecap: "round",
+            stroke_linejoin: "round",
+            "aria-hidden": "true",
+            path { d: "m4 15-1 6 6-1L21 8a2.8 2.8 0 0 0-4-4Z M15 6l4 4" }
+        }
+    }
+}
+
 /// New-note affordance: rounded square with a pen (Lucide `square-pen`).
 #[component]
 pub fn IconSquarePen() -> Element {

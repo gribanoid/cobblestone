@@ -186,7 +186,6 @@ pub fn App() -> Element {
             tabindex: "0",
             onkeydown: move |e| {
                 if e.data().key() == Key::Escape {
-                    ctx.note_menu_open.set(false);
                     ctx.dismiss_overlays();
                 }
                 let m = e.modifiers();
