@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+mod brand;
 mod codemirror;
 mod context_menu;
 mod drag_preview;

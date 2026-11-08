@@ -30,6 +30,7 @@ pub struct AppCtx {
     /// Bumps on every edit; autosave only commits if gen still matches.
     pub dirty_gen: Signal<u64>,
     pub theme: Signal<Theme>,
+    pub app_icon: Signal<Option<AppIcon>>,
     pub error: Signal<Option<String>>,
     /// Soft plugin/host notices (toast).
     pub notice: Signal<Option<String>>,
@@ -46,7 +47,7 @@ pub struct AppCtx {
     pub panel_open: Signal<bool>,
     /// Line for the editor to insert at the caret (e.g. a saved image embed).
     pub editor_insert: Signal<Option<String>>,
-    /// Bumps when a plugin replaces the active document on disk.
+    /// Bumps when the active editor document is opened, cleared or replaced.
     pub editor_revision: Signal<u64>,
     /// Source / Live Preview / Reading (vault-style).
     pub editor_mode: Signal<EditorMode>,
@@ -74,6 +75,7 @@ impl AppCtx {
             is_dirty: use_signal(|| false),
             dirty_gen: use_signal(|| 0u64),
             theme: use_signal(Theme::load),
+            app_icon: use_signal(|| None),
             error: use_signal(|| None),
             notice: use_signal(|| None),
             busy: use_signal(|| false),
@@ -110,6 +112,23 @@ impl AppCtx {
         if self.context_menu.peek().is_some() {
             self.context_menu.set(None);
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppIcon {
+    #[default]
+    Cobblestones,
+    Classic,
+}
+
+impl AppIcon {
+    pub fn persist(self) {
+        let eval = document::eval(
+            r#"try { localStorage.setItem('cb-app-icon', JSON.stringify(await dioxus.recv())); } catch (_) {}"#,
+        );
+        let _ = eval.send(self);
     }
 }
 
@@ -273,7 +292,7 @@ pub enum RenameKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeleteKind {
-    Note { slug: String, was_active: bool },
+    Note { slug: String },
     Folder { path: String },
     File { path: String },
 }

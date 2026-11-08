@@ -222,6 +222,12 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
     }
     match backend.get_note(&slug).await {
         Ok(note) => {
+            // The previous editor remains interactive while the request is in flight.
+            if !flush_save(ctx, backend.clone()).await {
+                ctx.busy.set(false);
+                return;
+            }
+            *ctx.editor_revision.write() += 1;
             ctx.active_slug.set(Some(slug.clone()));
             ctx.active_title.set(note.title.clone());
             ctx.persisted_title.set(note.title);
@@ -502,22 +508,28 @@ pub async fn confirm_rename(mut ctx: AppCtx, backend: SharedBackend, value: Stri
         return;
     }
     ctx.modal.set(ModalState::None);
+    let active_before = ctx.active_slug.peek().clone();
     if !flush_save(ctx, backend.clone()).await {
         return;
     }
     match kind {
-        RenameKind::Note { slug } => match backend.rename_note(&slug, &name).await {
-            Ok(new_slug) => {
-                if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
-                    ctx.active_slug.set(Some(new_slug));
-                    ctx.active_title.set(name.clone());
-                    ctx.persisted_title.set(name);
-                    ctx.is_dirty.set(false);
+        RenameKind::Note { slug } => {
+            let slug = note_after_save(ctx, active_before.as_deref(), slug);
+            let draft_title = ctx.active_title.peek().clone();
+            match backend.rename_note(&slug, &name).await {
+                Ok(new_slug) => {
+                    if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
+                        ctx.active_slug.set(Some(new_slug));
+                        if *ctx.active_title.peek() == draft_title {
+                            ctx.active_title.set(name.clone());
+                        }
+                        ctx.persisted_title.set(name);
+                    }
+                    reload_tree(ctx, backend).await;
                 }
-                reload_tree(ctx, backend).await;
+                Err(e) => ctx.show_error(e),
             }
-            Err(e) => ctx.show_error(e),
-        },
+        }
         RenameKind::Folder { path } => match backend.rename_folder(&path, &name).await {
             Ok(new_path) => {
                 let expanded: HashSet<_> = ctx
@@ -546,19 +558,13 @@ pub async fn confirm_delete(mut ctx: AppCtx, backend: SharedBackend) {
         return;
     };
     ctx.modal.set(ModalState::None);
+    let active_before = ctx.active_slug.peek().clone();
     if !flush_save(ctx, backend.clone()).await {
         return;
     }
     match kind {
-        DeleteKind::Note { slug, was_active } => {
-            let slug = if was_active {
-                ctx.active_slug
-                    .peek()
-                    .clone()
-                    .unwrap_or_else(|| slug.clone())
-            } else {
-                slug
-            };
+        DeleteKind::Note { slug } => {
+            let slug = note_after_save(ctx, active_before.as_deref(), slug);
             match backend.delete_note(&slug).await {
                 Ok(()) => {
                     if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
@@ -605,18 +611,11 @@ pub async fn move_note_to_folder(
     if !can_drop_note_or_folder(true, Some(&slug), None, folder.as_deref()) {
         return;
     }
+    let active_before = ctx.active_slug.peek().clone();
     if !flush_save(ctx, backend.clone()).await {
         return;
     }
-    let moving_active = ctx.active_slug.peek().as_deref() == Some(slug.as_str());
-    let move_slug = if moving_active {
-        ctx.active_slug
-            .peek()
-            .clone()
-            .unwrap_or_else(|| slug.clone())
-    } else {
-        slug
-    };
+    let move_slug = note_after_save(ctx, active_before.as_deref(), slug);
     match backend.move_note(&move_slug, folder.as_deref()).await {
         Ok(new_slug) => {
             if let Some(f) = &folder {
@@ -628,6 +627,15 @@ pub async fn move_note_to_folder(
             reload_tree(ctx, backend).await;
         }
         Err(e) => ctx.show_error(e),
+    }
+}
+
+// Saving a title edit can rename the active note before a queued operation runs.
+fn note_after_save(ctx: AppCtx, active_before: Option<&str>, target: String) -> String {
+    if active_before == Some(target.as_str()) {
+        ctx.active_slug.peek().clone().unwrap_or(target)
+    } else {
+        target
     }
 }
 
@@ -684,6 +692,7 @@ pub async fn apply_drop(mut ctx: AppCtx, backend: SharedBackend, dest: Option<St
 }
 
 pub fn clear_editor(mut ctx: AppCtx) {
+    *ctx.editor_revision.write() += 1;
     ctx.active_slug.set(None);
     ctx.active_title.set(String::new());
     ctx.active_content.set(String::new());
@@ -711,6 +720,7 @@ pub async fn attach_image(
     filename: String,
     bytes: Vec<u8>,
 ) {
+    let revision = *ctx.editor_revision.peek();
     let (folder, note) = match target {
         AttachTarget::ActiveNote => {
             let Some(slug) = ctx.active_slug.peek().clone() else {
@@ -732,6 +742,7 @@ pub async fn attach_image(
             let name = rel.rsplit('/').next().unwrap_or(&rel);
             if let Some(slug) = note
                 && ctx.active_slug.peek().as_deref() == Some(slug.as_str())
+                && *ctx.editor_revision.peek() == revision
             {
                 ctx.editor_insert.set(Some(format!("![[{name}]]")));
             }
@@ -849,9 +860,8 @@ pub fn handle_context_action(mut ctx: AppCtx, action: ContextAction) {
             });
         }
         ContextAction::DeleteNote { slug } => {
-            let was_active = ctx.active_slug.peek().as_deref() == Some(slug.as_str());
             ctx.modal.set(ModalState::Delete {
-                kind: DeleteKind::Note { slug, was_active },
+                kind: DeleteKind::Note { slug },
                 title: "Delete note?".into(),
                 message:
                     "This will permanently remove the note from disk. This action cannot be undone."

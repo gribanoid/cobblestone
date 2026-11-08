@@ -7,7 +7,7 @@ use crate::actions::{AttachTarget, attach_image};
 use crate::backend::SharedBackend;
 use crate::components::{ContextMenu, DragPreview, EditorArea, Modals, RightPanel, Sidebar};
 use crate::ops::{AppOp, spawn_ops};
-use crate::state::{AppCtx, EditorPreferences};
+use crate::state::{AppCtx, AppIcon, EditorPreferences};
 use crate::util::decode_base64;
 
 const CSS: Asset = asset!("/assets/main.css");
@@ -160,6 +160,21 @@ pub fn App() -> Element {
 
     use_effect(move || {
         set_document_theme(theme.read().as_str());
+    });
+
+    use_hook(move || {
+        spawn(async move {
+            let stored = document::eval(
+                r#"try { return JSON.parse(localStorage.getItem('cb-app-icon')); } catch (_) { return null; }"#,
+            )
+            .join::<Option<AppIcon>>()
+            .await;
+            if let Ok(Some(icon)) = stored
+                && ctx.app_icon.peek().is_none()
+            {
+                ctx.app_icon.set(Some(icon));
+            }
+        });
     });
 
     rsx! {

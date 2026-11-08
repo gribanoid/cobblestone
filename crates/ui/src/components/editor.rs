@@ -2,23 +2,23 @@
 
 use std::collections::HashMap;
 
+use dioxus::dioxus_core::Task;
 use dioxus::prelude::*;
 
 use crate::actions::{mark_dirty, toggle_theme};
 use crate::backend::SharedBackend;
+use crate::components::brand::BrandIcon;
 use crate::components::codemirror::{CodeMirrorEditor, use_codemirror};
 use crate::components::md_editor::MarkdownEditor;
-use crate::icons::{IconPanelRight, IconSunMoon};
+use crate::icons::{IconPanelRight, IconSquarePen, IconSunMoon};
 use crate::markdown::{embed_image_names, render_note_body};
 use crate::models::NoteInfo;
 use crate::ops::{AppOp, Ops};
-use crate::state::{AppCtx, EditorMode};
-
-const LOGO: Asset = asset!("/assets/cobblestone.png");
+use crate::state::{AppCtx, EditorMode, ModalState};
 
 #[component]
 pub fn EditorArea() -> Element {
-    let ctx = use_context::<AppCtx>();
+    let mut ctx = use_context::<AppCtx>();
     let ops = use_context::<Ops>();
     let backend = use_context::<SharedBackend>();
     let active = ctx.active_slug;
@@ -32,52 +32,73 @@ pub fn EditorArea() -> Element {
 
     let codemirror_ready = use_codemirror();
     let mut image_srcs = use_signal(HashMap::<String, String>::new);
+    let mut image_revision = use_signal(|| None);
+    let mut pending_images = use_signal(|| None::<Task>);
+    let image_names = use_memo(move || embed_image_names(&content.read()));
 
     use_effect(move || {
-        let _slug = active.read().clone();
-        image_srcs.write().clear();
-    });
-
-    use_effect(move || {
-        let body = content.read().clone();
-        let names = embed_image_names(&body);
-        if names.is_empty() {
+        let slug = active.read().clone();
+        let revision = *ctx.editor_revision.read();
+        let names = image_names.read().clone();
+        let pending = *pending_images.peek();
+        if let Some(task) = pending {
+            task.cancel();
+        }
+        if *image_revision.peek() != Some(revision) {
+            image_srcs.write().clear();
+            image_revision.set(Some(revision));
+        }
+        if slug.is_none() || names.is_empty() {
             return;
         }
         let backend = backend.clone();
-        spawn(async move {
+        pending_images.set(Some(spawn(async move {
             for name in names {
                 if image_srcs.peek().contains_key(&name) {
                     continue;
                 }
-                match backend.attachment_src(&name).await {
-                    Ok(src) => {
-                        image_srcs.write().insert(name, src);
-                    }
-                    Err(e) => {
-                        eprintln!("attachment src '{name}': {e}");
-                    }
+                let source = backend.attachment_src(&name).await;
+                if *ctx.editor_revision.peek() != revision || *active.peek() != slug {
+                    return;
+                }
+                if let Ok(src) = source {
+                    image_srcs.write().insert(name, src);
                 }
             }
-        });
+        })));
     });
 
     if active.read().is_none() {
+        let has_notes = !ctx.notes.read().is_empty();
         return rsx! {
-            div { class: "welcome", id: "welcome",
-                div { class: "logo-big",
-                    img {
-                        class: "app-icon app-icon-large",
-                        src: LOGO,
-                        alt: "",
-                        width: "64",
-                        height: "64",
+            section { class: "welcome", id: "welcome",
+                div { class: "welcome-content",
+                    BrandIcon { large: true }
+                    h2 { "Cobblestone" }
+                    p {
+                        if has_notes { "Open a note from the sidebar or start something new." }
+                        else { "Create your first note in this vault." }
                     }
-                }
-                h2 { "Cobblestone" }
-                p { "Write anything. Store everything. Own it all." }
-                span { class: "welcome-hint",
-                    "Use the toolbar icons to create notes and folders"
+                    div { class: "welcome-actions",
+                        button {
+                            class: "welcome-button welcome-primary",
+                            r#type: "button",
+                            onclick: move |_| ctx.modal.set(ModalState::NewNote {
+                                folder: None,
+                                title: String::new(),
+                            }),
+                            IconSquarePen {}
+                            "New note"
+                        }
+                        if has_notes {
+                            button {
+                                class: "welcome-button",
+                                r#type: "button",
+                                onclick: move |_| *ctx.focus_search_gen.write() += 1,
+                                "Find a note"
+                            }
+                        }
+                    }
                 }
             }
         };

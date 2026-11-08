@@ -94,9 +94,8 @@ input, textarea { font: inherit; outline: none; color: inherit }
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
-  image-rendering: pixelated;
-  border-radius: 3px;
 }
+.app-icon-classic { image-rendering: pixelated; border-radius: 16%; }
 .search-wrap { padding: 6px 8px 4px }
 .search-input {
   width: 100%; background: var(--surface2); border: 1px solid transparent;
@@ -890,24 +889,39 @@ input, textarea { font: inherit; outline: none; color: inherit }
 
 /* ─── Welcome ────────────────────────────────────────────────────────────── */
 .welcome {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  color: var(--muted); text-align: center; gap: 14px; padding: 40px;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
 }
-.logo-big { display: grid; place-items: center }
-.app-icon-large {
-  width: 64px;
-  height: 64px;
-  image-rendering: pixelated;
-  border-radius: 8px;
+.welcome-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
 }
-.welcome h2 { font-size: 20px; color: var(--text); font-weight: 600 }
-.welcome p { font-size: 13.5px; max-width: 320px; line-height: 1.8; color: var(--subtext) }
-.welcome-hint {
-  font-size: 12px; color: var(--muted);
-  border: 1px solid var(--border); border-radius: 3px;
-  padding: 6px 14px; background: var(--surface);
+.app-icon-large { width: 52px; height: 52px; }
+.welcome h2 { font-size: 26px; color: var(--text); font-weight: 650; }
+.welcome p { max-width: 36ch; line-height: 1.55; color: var(--subtext); }
+.welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.welcome-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text);
 }
+.welcome-button:hover { background: var(--overlay); }
+.welcome-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.welcome-button .lucide { width: 16px; height: 16px; }
+.welcome-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.welcome-primary:hover { background: var(--accent); filter: brightness(1.08); }
 
 .tree-context-menu {
   position: fixed; z-index: 150;

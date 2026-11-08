@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::actions::{reveal_folder, schedule_search, toggle_expand_all};
+use crate::components::brand::BrandIcon;
 use crate::components::tree::VaultTree;
 use crate::icons::{
     IconArrowUpDown, IconCheck, IconChevronsUpDown, IconFile, IconFolder, IconFolderPlus,
@@ -12,8 +13,6 @@ use crate::models::SearchHit;
 use crate::ops::{AppOp, Ops};
 use crate::state::{AppCtx, ModalState, TreeSort};
 use crate::util::sort_vault_tree;
-
-const LOGO: Asset = asset!("/assets/cobblestone.png");
 
 #[component]
 pub fn Sidebar() -> Element {
@@ -49,7 +48,7 @@ pub fn Sidebar() -> Element {
         aside { class: "sidebar",
             div { class: "sidebar-header",
                 span { class: "logo",
-                    img { class: "app-icon", src: LOGO, alt: "", width: "18", height: "18" }
+                    BrandIcon {}
                     span { "Cobblestone" }
                 }
             }

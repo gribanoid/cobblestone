@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::icons::{IconFolder, IconSettings, IconSquarePen, IconSunMoon};
-use crate::state::{AppCtx, EditorPreferences, ModalState};
+use crate::state::{AppCtx, AppIcon, EditorPreferences, ModalState};
 
 const CSS: Asset = asset!("/assets/settings.css");
 
@@ -103,6 +103,31 @@ pub(super) fn SettingsModal() -> Element {
                                             r#type: "button",
                                             onclick: move |_| crate::actions::toggle_theme(ctx),
                                             "Switch theme ({ctx.theme.read().as_str()})"
+                                        }
+                                    }
+                                    SettingRow {
+                                        title: "App icon",
+                                        description: "Choose the icon shown on the welcome screen and in the sidebar.",
+                                        label_for: "app-icon-choice",
+                                        select {
+                                            id: "app-icon-choice",
+                                            aria_describedby: "app-icon-choice-hint",
+                                            class: "settings-select",
+                                            value: match ctx.app_icon.read().unwrap_or_default() {
+                                                AppIcon::Cobblestones => "cobblestones",
+                                                AppIcon::Classic => "classic",
+                                            },
+                                            onchange: move |event| {
+                                                let icon = if event.value() == "classic" {
+                                                    AppIcon::Classic
+                                                } else {
+                                                    AppIcon::Cobblestones
+                                                };
+                                                ctx.app_icon.set(Some(icon));
+                                                icon.persist();
+                                            },
+                                            option { value: "cobblestones", "Cobblestones" }
+                                            option { value: "classic", "Classic pixel icon" }
                                         }
                                     }
                                 },
