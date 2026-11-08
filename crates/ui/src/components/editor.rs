@@ -7,7 +7,6 @@ use dioxus::prelude::*;
 
 use crate::actions::{mark_dirty, toggle_theme};
 use crate::backend::SharedBackend;
-use crate::components::brand::BrandIcon;
 use crate::components::codemirror::{CodeMirrorEditor, use_codemirror};
 use crate::components::md_editor::MarkdownEditor;
 use crate::icons::{IconPanelRight, IconSquarePen, IconSunMoon};
@@ -73,11 +72,9 @@ pub fn EditorArea() -> Element {
         return rsx! {
             section { class: "welcome", id: "welcome",
                 div { class: "welcome-content",
-                    BrandIcon { large: true }
-                    h2 { "Cobblestone" }
-                    p {
-                        if has_notes { "Open a note from the sidebar." }
-                        else { "Create your first note in this vault." }
+                    header { class: "welcome-heading",
+                        h1 { "Cobblestone" }
+                        p { "A local workspace for your Markdown notes." }
                     }
                     div { class: "welcome-actions",
                         button {
@@ -96,6 +93,25 @@ pub fn EditorArea() -> Element {
                                 r#type: "button",
                                 onclick: move |_| *ctx.focus_search_gen.write() += 1,
                                 "Find a note"
+                            }
+                        }
+                    }
+                    section { class: "welcome-shortcuts", aria_labelledby: "welcome-shortcuts-title",
+                        h2 { id: "welcome-shortcuts-title", "Keyboard shortcuts" }
+                        dl {
+                            if cfg!(feature = "desktop") {
+                                div {
+                                    dt { "Open the command palette" }
+                                    dd { kbd { "⌘ / Ctrl + P" } }
+                                }
+                            }
+                            div {
+                                dt { "Switch between editing and reading" }
+                                dd { kbd { "⌘ / Ctrl + E" } }
+                            }
+                            div {
+                                dt { "Save the current note" }
+                                dd { kbd { "⌘ / Ctrl + S" } }
                             }
                         }
                     }

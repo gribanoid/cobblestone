@@ -897,16 +897,28 @@ input, textarea { font: inherit; outline: none; color: inherit }
   padding: 24px;
 }
 .welcome-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
+  display: grid;
+  gap: 18px;
+  width: min(100%, 420px);
 }
-.app-icon-large { width: 72px; height: 72px; }
-.welcome h2 { font-size: 22px; color: var(--text); font-weight: 600; line-height: 1.2; }
-.welcome p { max-width: 36ch; line-height: 1.55; color: var(--subtext); }
-.welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.welcome-heading h1 { font-size: 30px; color: var(--text); font-weight: 600; line-height: 1.2; }
+.welcome-heading p { margin-top: 8px; line-height: 1.55; color: var(--subtext); }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.welcome-shortcuts { border-top: 1px solid var(--border); padding-top: 16px; }
+.welcome-shortcuts h2 { font-size: 13px; font-weight: 600; color: var(--text); }
+.welcome-shortcuts dl { display: grid; gap: 8px; margin-top: 12px; }
+.welcome-shortcuts dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.welcome-shortcuts dt { color: var(--subtext); line-height: 1.4; }
+.welcome-shortcuts kbd {
+  display: inline-block;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text);
+  font: 12px ui-monospace, monospace;
+  white-space: nowrap;
+}
 .welcome-button {
   display: inline-flex;
   align-items: center;

@@ -107,7 +107,7 @@ pub(super) fn SettingsModal() -> Element {
                                     }
                                     SettingRow {
                                         title: "App icon",
-                                        description: "Choose the icon shown on the welcome screen and in the sidebar.",
+                                        description: "Choose the icon shown in the sidebar.",
                                         label_for: "app-icon-choice",
                                         select {
                                             id: "app-icon-choice",
