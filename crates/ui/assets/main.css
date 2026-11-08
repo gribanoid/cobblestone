@@ -906,18 +906,20 @@ input, textarea { font: inherit; outline: none; color: inherit }
   max-width: 560px;
   margin-inline: auto;
 }
+.welcome-heading { display: flex; align-items: center; gap: 12px; }
+.welcome-heading .app-icon { width: 44px; height: 44px; }
+.welcome-heading > div { min-width: 0; }
 .welcome-heading h1 { font-size: clamp(22px, 4vw, 30px); font-weight: 650; line-height: 1.2; overflow-wrap: anywhere; }
 .welcome-project { margin-top: 6px; color: var(--subtext); overflow-wrap: anywhere; }
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .welcome-recent { min-width: 0; margin-top: 8px; }
 .welcome-recent h2 { margin-bottom: 10px; font-size: 14px; font-weight: 600; }
-.welcome-recent ul, .welcome-empty {
+.welcome-recent ul {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   list-style: none;
 }
-.welcome-empty { padding: 16px; color: var(--subtext); line-height: 1.5; }
 .welcome-recent li + li { border-top: 1px solid var(--border); }
 .welcome-note {
   display: flex; align-items: center; gap: 12px;

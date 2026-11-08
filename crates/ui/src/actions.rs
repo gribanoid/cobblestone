@@ -11,6 +11,7 @@ use crate::backend::SharedBackend;
 use crate::models::NoteGraph;
 use crate::models::SearchHit;
 use crate::ops::{AppOp, Ops};
+use crate::recent::{self, RecentNotes};
 use crate::state::{
     AppCtx, ContextAction, ContextMenuItem, ContextMenuState, DeleteKind, DragPayload, ModalState,
     RenameKind,
@@ -20,6 +21,12 @@ use crate::util::{
     can_drop_note_or_folder, collect_folder_paths, content_with_title, expand_folder_path,
     find_matching_folders, flatten_tree, remap_path, strip_leading_heading,
 };
+
+pub(crate) async fn load_project(mut ctx: AppCtx, backend: SharedBackend) {
+    let history = RecentNotes::load(backend.vault_path().await.ok()).await;
+    ctx.recent_notes.set(history);
+    reload_tree(ctx, backend).await;
+}
 
 pub async fn reload_tree(mut ctx: AppCtx, backend: SharedBackend) {
     if let Ok(label) = backend.vault_label().await {
@@ -33,6 +40,7 @@ pub async fn reload_tree(mut ctx: AppCtx, backend: SharedBackend) {
             if ctx.search_query.peek().trim().is_empty() {
                 ctx.search_results.set(None);
             }
+            recent::remove_missing(ctx).await;
         }
         Err(e) => ctx.show_error(e),
     }
@@ -161,6 +169,7 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
                         ctx.active_title.set(title.clone());
                     }
                 }
+                recent::remap(ctx, &slug_at_start, &new_slug).await;
                 slug = new_slug;
             }
             Err(e) => {
@@ -217,6 +226,7 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
         return;
     }
     if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
+        recent::record(ctx, &slug).await;
         ctx.busy.set(false);
         return;
     }
@@ -238,6 +248,7 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
             ctx.editor_mode
                 .set(ctx.editor_preferences.peek().editing_mode());
             ctx.note_menu_open.set(false);
+            recent::record(ctx, &slug).await;
             refresh_graph(ctx, backend, &slug).await;
         }
         Err(e) => ctx.show_error(e),
@@ -256,6 +267,8 @@ pub async fn switch_vault(mut ctx: AppCtx, backend: SharedBackend, path: String)
     }
     match backend.switch_vault(&path).await {
         Ok(()) => {
+            ctx.notes.write().clear();
+            ctx.tree.write().clear();
             clear_editor(ctx);
             ctx.search_query.set(String::new());
             ctx.search_results.set(None);
@@ -263,7 +276,7 @@ pub async fn switch_vault(mut ctx: AppCtx, backend: SharedBackend, path: String)
             ctx.expanded.write().clear();
             ctx.tasks_panel.set(false);
             ctx.modal.set(ModalState::None);
-            reload_tree(ctx, backend).await;
+            load_project(ctx, backend).await;
         }
         Err(e) => ctx.show_error(e),
     }
@@ -466,7 +479,9 @@ pub async fn create_note(
                 ctx.expanded.write().insert(f.clone());
             }
             reload_tree(ctx, backend.clone()).await;
+            ctx.busy.set(false);
             open_note(ctx, backend, slug).await;
+            return;
         }
         Err(e) => ctx.show_error(e),
     }
@@ -518,6 +533,7 @@ pub async fn confirm_rename(mut ctx: AppCtx, backend: SharedBackend, value: Stri
             let draft_title = ctx.active_title.peek().clone();
             match backend.rename_note(&slug, &name).await {
                 Ok(new_slug) => {
+                    recent::remap(ctx, &slug, &new_slug).await;
                     if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
                         ctx.active_slug.set(Some(new_slug));
                         if *ctx.active_title.peek() == draft_title {
@@ -532,6 +548,7 @@ pub async fn confirm_rename(mut ctx: AppCtx, backend: SharedBackend, value: Stri
         }
         RenameKind::Folder { path } => match backend.rename_folder(&path, &name).await {
             Ok(new_path) => {
+                recent::remap(ctx, &path, &new_path).await;
                 let expanded: HashSet<_> = ctx
                     .expanded
                     .peek()
@@ -618,6 +635,7 @@ pub async fn move_note_to_folder(
     let move_slug = note_after_save(ctx, active_before.as_deref(), slug);
     match backend.move_note(&move_slug, folder.as_deref()).await {
         Ok(new_slug) => {
+            recent::remap(ctx, &move_slug, &new_slug).await;
             if let Some(f) = &folder {
                 ctx.expanded.write().insert(f.clone());
             }
@@ -658,6 +676,7 @@ pub async fn move_folder_to_parent(
     }
     match backend.move_folder(&folder_path, dest.as_deref()).await {
         Ok(new_path) => {
+            recent::remap(ctx, &folder_path, &new_path).await;
             if let Some(d) = &dest {
                 ctx.expanded.write().insert(d.clone());
             }

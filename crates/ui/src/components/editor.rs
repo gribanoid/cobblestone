@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 
 use crate::actions::{mark_dirty, toggle_theme};
 use crate::backend::SharedBackend;
+use crate::components::brand::BrandIcon;
 use crate::components::codemirror::{CodeMirrorEditor, use_codemirror};
 use crate::components::md_editor::MarkdownEditor;
 use crate::icons::{IconFile, IconPanelRight, IconSquarePen, IconSunMoon};
@@ -69,19 +70,24 @@ pub fn EditorArea() -> Element {
 
     if active.read().is_none() {
         let notes = ctx.notes.read();
-        let mut recent: Vec<_> = notes.iter().collect();
-        recent.sort_unstable_by(|a, b| b.modified.cmp(&a.modified).then(a.slug.cmp(&b.slug)));
-        recent.truncate(5);
+        let history = ctx.recent_notes.read();
+        let recent: Vec<_> = history
+            .slugs()
+            .filter_map(|slug| notes.iter().find(|note| note.slug == slug))
+            .collect();
         let project = project_label.read();
         return rsx! {
             section { class: "welcome", id: "welcome",
                 div { class: "welcome-content",
                     header { class: "welcome-heading",
-                        h1 { "Cobblestone" }
-                        if project.is_empty() || project.as_str() == "Cobblestone" {
-                            p { class: "welcome-project", "Your Markdown workspace" }
-                        } else {
-                            p { class: "welcome-project", "Project: {project}" }
+                        BrandIcon {}
+                        div {
+                            h1 { "Cobblestone" }
+                            if project.is_empty() || project.as_str() == "Cobblestone" {
+                                p { class: "welcome-project", "Your Markdown workspace" }
+                            } else {
+                                p { class: "welcome-project", "{project}" }
+                            }
                         }
                     }
                     div { class: "welcome-actions",
@@ -95,7 +101,7 @@ pub fn EditorArea() -> Element {
                             IconSquarePen {}
                             "New note"
                         }
-                        if !recent.is_empty() {
+                        if !notes.is_empty() {
                             button {
                                 class: "welcome-button",
                                 r#type: "button",
@@ -104,16 +110,13 @@ pub fn EditorArea() -> Element {
                             }
                         }
                     }
-                    section { class: "welcome-recent", aria_labelledby: "welcome-recent-title",
-                        h2 { id: "welcome-recent-title", "Recently edited" }
-                        if recent.is_empty() {
-                            p { class: "welcome-empty", "Your notes will appear here. Create a note to get started." }
-                        } else {
+                    if !recent.is_empty() {
+                        section { class: "welcome-recent", aria_labelledby: "welcome-recent-title",
+                            h2 { id: "welcome-recent-title", "Recently opened" }
                             ul {
                                 for note in recent {
                                     {
                                         let slug = note.slug.clone();
-                                        let location = note.slug.rsplit_once('/').map_or("Project root", |(folder, _)| folder);
                                         rsx! {
                                             li { key: "{note.slug}",
                                                 button {
@@ -124,7 +127,9 @@ pub fn EditorArea() -> Element {
                                                     IconFile {}
                                                     span { class: "welcome-note-text",
                                                         span { class: "welcome-note-title", "{note.title}" }
-                                                        span { class: "welcome-note-location", "{location}" }
+                                                        if let Some((folder, _)) = note.slug.rsplit_once('/') {
+                                                            span { class: "welcome-note-location", "{folder}" }
+                                                        }
                                                     }
                                                 }
                                             }

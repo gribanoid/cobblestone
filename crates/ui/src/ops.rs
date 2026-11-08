@@ -8,7 +8,7 @@ use futures::StreamExt;
 
 use crate::actions::{
     apply_drop, confirm_delete, confirm_rename, create_folder, create_note, flush_save,
-    move_note_to_folder, open_note, reload_tree, run_search, switch_vault, toggle_reading,
+    load_project, move_note_to_folder, open_note, run_search, switch_vault, toggle_reading,
 };
 use crate::backend::SharedBackend;
 use crate::state::AppCtx;
@@ -80,7 +80,7 @@ pub fn spawn_ops(ctx: AppCtx, backend: SharedBackend) -> Ops {
 #[cfg(feature = "desktop")]
 async fn dispatch(ctx: AppCtx, backend: SharedBackend, host: Option<SharedPluginHost>, op: AppOp) {
     match op {
-        AppOp::ReloadTree => reload_tree(ctx, backend).await,
+        AppOp::ReloadTree => load_project(ctx, backend).await,
         AppOp::Search => run_search(ctx, backend, host.clone()).await,
         AppOp::OpenNote(slug) => open_note(ctx, backend, slug).await,
         AppOp::CreateNote { title, folder } => create_note(ctx, backend, title, folder).await,
@@ -104,7 +104,7 @@ async fn dispatch(ctx: AppCtx, backend: SharedBackend, host: Option<SharedPlugin
 #[cfg(not(feature = "desktop"))]
 async fn dispatch(ctx: AppCtx, backend: SharedBackend, op: AppOp) {
     match op {
-        AppOp::ReloadTree => reload_tree(ctx, backend).await,
+        AppOp::ReloadTree => load_project(ctx, backend).await,
         AppOp::Search => run_search(ctx, backend).await,
         AppOp::OpenNote(slug) => open_note(ctx, backend, slug).await,
         AppOp::CreateNote { title, folder } => create_note(ctx, backend, title, folder).await,

@@ -16,6 +16,7 @@ pub mod icons;
 pub mod markdown;
 pub mod models;
 pub mod ops;
+mod recent;
 pub mod state;
 pub mod theme;
 pub mod timeutil;

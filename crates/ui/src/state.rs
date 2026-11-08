@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use dioxus::prelude::*;
 
 use crate::models::{NoteGraph, NoteInfo, SearchHit, VaultNode};
+use crate::recent::RecentNotes;
 use crate::theme::Theme;
 
 /// Reactive UI state shared via [`use_context`].
@@ -16,6 +17,7 @@ use crate::theme::Theme;
 pub struct AppCtx {
     pub tree: Signal<Vec<VaultNode>>,
     pub notes: Signal<Vec<NoteInfo>>,
+    pub(crate) recent_notes: Signal<RecentNotes>,
     pub search_results: Signal<Option<Vec<SearchHit>>>,
     pub search_query: Signal<String>,
     /// Bumps on every search input; async workers check before applying results.
@@ -63,6 +65,7 @@ impl AppCtx {
         let ctx = Self {
             tree: use_signal(Vec::new),
             notes: use_signal(Vec::new),
+            recent_notes: use_signal(RecentNotes::default),
             search_results: use_signal(|| None),
             search_query: use_signal(String::new),
             search_gen: use_signal(|| 0u64),
