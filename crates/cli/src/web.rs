@@ -20,27 +20,8 @@ type AppState = Arc<Store>;
 pub async fn run(store: Store, port: u16) -> Result<()> {
     let state = Arc::new(store);
     let ui_dist = ui_dist_dir();
-
-    let api = Router::new()
-        .route("/notes", put(api_create))
-        .route("/notes/{slug}", get(api_get))
-        .route("/notes/{slug}", post(api_update))
-        .route("/notes/{slug}", delete(api_delete))
-        .route("/notes/{slug}/graph", get(api_graph))
-        .route("/notes/move", post(api_move_note))
-        .route("/tree", get(api_tree))
-        .route("/folders", post(api_create_folder))
-        .route("/folders/move", post(api_move_folder))
-        .route("/folders/rename", post(api_rename_folder))
-        .route("/folders/delete", post(api_delete_folder))
-        .route("/files/delete", post(api_delete_file))
-        .route("/notes/rename", post(api_rename_note))
-        .route("/search", get(api_search))
-        .route("/attachments", post(api_upload_attachment))
-        .route("/attachments/{*name}", get(api_get_attachment));
-
     let app = Router::new()
-        .nest("/api", api)
+        .nest("/api", api_router())
         .fallback_service(
             ServeDir::new(&ui_dist).fallback(ServeFile::new(ui_dist.join("index.html"))),
         )
@@ -64,6 +45,24 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn api_router() -> Router<AppState> {
+    Router::new()
+        .route("/notes", put(api_create))
+        .route("/notes/{slug}", get(api_get))
+        .route("/notes/{slug}", post(api_update))
+        .route("/notes/{slug}", delete(api_delete))
+        .route("/notes/{slug}/graph", get(api_graph))
+        .route("/tree", get(api_tree))
+        .route("/folders", post(api_create_folder))
+        .route("/folders/move", post(api_move_folder))
+        .route("/folders/rename", post(api_rename_folder))
+        .route("/folders/delete", post(api_delete_folder))
+        .route("/files/delete", post(api_delete_file))
+        .route("/search", get(api_search))
+        .route("/attachments", post(api_upload_attachment))
+        .route("/attachments/{*name}", get(api_get_attachment))
 }
 
 fn ui_dist_dir() -> PathBuf {
@@ -137,11 +136,35 @@ struct UpdateBody {
     content: String,
 }
 
+// The two action URLs also match valid note slugs. Keep the action payloads
+// working on POST while leaving ordinary note CRUD available at those paths.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NotePost {
+    Update(UpdateBody),
+    Rename(RenameNoteBody),
+    Move(MoveNoteBody),
+}
+
 async fn api_update(
     State(store): State<AppState>,
     Path(slug): Path<String>,
-    Json(body): Json<UpdateBody>,
+    Json(request): Json<NotePost>,
 ) -> impl IntoResponse {
+    let body = match request {
+        NotePost::Update(body) => body,
+        NotePost::Rename(body) if slug == "rename" => {
+            return api_rename_note(State(store), Json(body))
+                .await
+                .into_response();
+        }
+        NotePost::Move(body) if slug == "move" => {
+            return api_move_note(State(store), Json(body))
+                .await
+                .into_response();
+        }
+        _ => return (StatusCode::UNPROCESSABLE_ENTITY, "Expected note content").into_response(),
+    };
     match store.write(&slug, &body.content) {
         Ok(_) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -412,4 +435,61 @@ fn title_from_content(content: &str, fallback: &str) -> String {
         .find(|l| l.starts_with("# "))
         .map(|l| l.trim_start_matches("# ").to_string())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn action_names_are_also_valid_note_slugs() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::with_root(dir.path().to_path_buf()).unwrap());
+        let app = api_router().with_state(Arc::clone(&store));
+
+        for slug in ["move", "rename"] {
+            store.write(slug, "Original").unwrap();
+            for (method, body) in [("GET", ""), ("POST", r#"{"content":"Edited"}"#)] {
+                let request = Request::builder()
+                    .method(method)
+                    .uri(format!("/notes/{slug}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap();
+                assert_eq!(
+                    app.clone().oneshot(request).await.unwrap().status(),
+                    StatusCode::OK
+                );
+            }
+            assert_eq!(store.read(slug).unwrap(), "Edited");
+            let request = Request::delete(format!("/notes/{slug}"))
+                .body(Body::empty())
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::OK
+            );
+            assert!(!store.exists(slug));
+            store.write(slug, "Edited").unwrap();
+        }
+
+        for (slug, body) in [
+            ("rename", r#"{"slug":"rename","title":"Renamed"}"#),
+            ("move", r#"{"slug":"move","folder":"Folder"}"#),
+        ] {
+            let request = Request::post(format!("/notes/{slug}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::OK
+            );
+            assert!(!store.exists(slug));
+        }
+        assert!(store.exists("Renamed"));
+        assert!(store.exists("Folder/move"));
+    }
 }
