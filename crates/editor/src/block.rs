@@ -319,9 +319,7 @@ impl Block {
                 };
                 let raw = format!("{open}\n{body}\n```");
                 Block {
-                    kind: BlockKind::CodeFence {
-                        lang: lang.clone(),
-                    },
+                    kind: BlockKind::CodeFence { lang: lang.clone() },
                     raw,
                 }
             }
@@ -413,13 +411,11 @@ fn code_fence_body(raw: &str) -> &str {
     if rest.is_empty() {
         return "";
     }
-    if is_fence_close(rest[rest.len() - 1]) {
-        if rest.len() == 1 {
-            return "";
-        }
-        // Can't return joined string as &str easily — store isn't available.
-        // Callers that need owned body use code_fence_body_owned.
+    if is_fence_close(rest[rest.len() - 1]) && rest.len() == 1 {
+        return "";
     }
+    // Can't return joined string as &str easily — store isn't available.
+    // Callers that need owned body use code_fence_body_owned.
     // For &str body without alloc when closed: find byte range
     let Some(after_first) = raw.find('\n') else {
         return "";
@@ -521,7 +517,9 @@ fn parse_task(line: &str) -> Option<(String, bool)> {
     let indent = line[..trimmed_start].to_string();
     let rest = &line[trimmed_start..];
     // `- [ ] ` or `- [x] ` / `- [X] `
-    let after_marker = rest.strip_prefix("- [").or_else(|| rest.strip_prefix("* ["))?;
+    let after_marker = rest
+        .strip_prefix("- [")
+        .or_else(|| rest.strip_prefix("* ["))?;
     let checked = match after_marker.as_bytes().first()? {
         b' ' | b'x' | b'X' => after_marker.as_bytes()[0] != b' ',
         _ => return None,
@@ -543,11 +541,7 @@ fn parse_blockquote(line: &str) -> Option<u8> {
             break;
         }
     }
-    if depth == 0 {
-        None
-    } else {
-        Some(depth)
-    }
+    if depth == 0 { None } else { Some(depth) }
 }
 
 fn parse_bullet(line: &str) -> Option<(String, char, &str)> {
@@ -735,18 +729,12 @@ mod tests {
 
     #[test]
     fn bare_marker_stays_paragraph_until_space() {
-        assert!(matches!(
-            Block::parse_line("-").kind,
-            BlockKind::Paragraph
-        ));
+        assert!(matches!(Block::parse_line("-").kind, BlockKind::Paragraph));
         assert!(matches!(
             Block::parse_line("- ").kind,
             BlockKind::Bullet { .. }
         ));
-        assert!(matches!(
-            Block::parse_line("1)").kind,
-            BlockKind::Paragraph
-        ));
+        assert!(matches!(Block::parse_line("1)").kind, BlockKind::Paragraph));
         assert!(matches!(
             Block::parse_line("1) ").kind,
             BlockKind::Ordered { .. }

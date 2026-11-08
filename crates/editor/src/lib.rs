@@ -17,13 +17,13 @@ pub mod selection;
 pub mod session;
 
 pub use block::{
-    code_fence_body_owned, join_blocks, parse_blocks, splice_block_raw, Block, BlockKind,
+    Block, BlockKind, code_fence_body_owned, join_blocks, parse_blocks, splice_block_raw,
 };
 pub use clipboard::PastedImage;
 pub use component::MarkdownEditor;
 pub use edit::{
-    apply_body, apply_reveal, backspace, enter, indent, infer_caret, is_source_only, is_structural,
-    paste_text, reveal_backspace_char, DocState,
+    DocState, apply_body, apply_reveal, backspace, enter, indent, infer_caret, is_source_only,
+    is_structural, paste_text, reveal_backspace_char,
 };
 pub use history::{DocSnapshot, History};
-pub use session::{cut_doc_sel, expected_line_value, EditorCmd, EditorEffect, EditorSession};
+pub use session::{EditorCmd, EditorEffect, EditorSession, cut_doc_sel, expected_line_value};

@@ -3,10 +3,10 @@
 //! Pure editor orchestration (no Dioxus / DOM). UI reads caret from the DOM,
 //! builds an [`EditorCmd`], and applies the returned [`EditorEffect`].
 
-use crate::block::{join_blocks, parse_blocks, Block, BlockKind};
+use crate::block::{Block, BlockKind, join_blocks, parse_blocks};
 use crate::edit::{
-    apply_body, apply_reveal, backspace, byte_at, char_len, enter, indent, is_source_only,
-    own_line_insert_pos, paste_line_text, paste_text, DocState,
+    DocState, apply_body, apply_reveal, backspace, byte_at, char_len, enter, indent,
+    is_source_only, own_line_insert_pos, paste_line_text, paste_text,
 };
 use crate::history::History;
 use crate::selection::{self, BlockRange};
@@ -25,7 +25,10 @@ pub enum EditorCmd {
     /// Replace focused line body / reveal text (typing).
     Input(String),
     /// Enter with DOM selection `a..b` (char offsets). Selection is deleted first.
-    Enter { a: usize, b: usize },
+    Enter {
+        a: usize,
+        b: usize,
+    },
     /// Backspace. `at_start` when caret is 0 and selection is empty.
     /// `a..b` is the live selection (used to delete a range inside the line).
     Backspace {
@@ -41,19 +44,29 @@ pub enum EditorCmd {
         dom_pos: usize,
         dom_value: String,
     },
-    Indent { deeper: bool },
+    Indent {
+        deeper: bool,
+    },
     Undo,
     Redo,
     SelectAll,
-    CutLine { a: usize, b: usize },
+    CutLine {
+        a: usize,
+        b: usize,
+    },
     Focus(usize),
     /// Promote focused source-only block into reveal mode (sync, no spawn).
     EnsureSourceReveal,
     /// Click a rendered embed/link: reveal its raw source at `caret_at`.
-    ClickReveal { index: usize, caret_at: usize },
+    ClickReveal {
+        index: usize,
+        caret_at: usize,
+    },
     /// Set / clear document block selection (cross-line drag).
     SetDocSel(Option<BlockRange>),
-    Open { text: String },
+    Open {
+        text: String,
+    },
 }
 
 /// Side-effects the UI must perform after [`EditorSession::dispatch`].
@@ -210,15 +223,14 @@ impl EditorSession {
         let Some(b) = blocks.get(self.doc.focus) else {
             return;
         };
-        if is_source_only(&b.kind) {
-            if self
+        if is_source_only(&b.kind)
+            && self
                 .doc
                 .reveal
                 .as_ref()
                 .is_none_or(|(i, _)| *i != self.doc.focus)
-            {
-                self.doc.reveal = Some((self.doc.focus, b.raw.clone()));
-            }
+        {
+            self.doc.reveal = Some((self.doc.focus, b.raw.clone()));
         }
     }
 
@@ -470,10 +482,10 @@ impl EditorSession {
 
 /// What the focused line's textarea will show once `state` renders.
 pub fn expected_line_value(state: &DocState) -> Option<String> {
-    if let Some((i, t)) = state.reveal.as_ref() {
-        if *i == state.focus {
-            return Some(t.clone());
-        }
+    if let Some((i, t)) = state.reveal.as_ref()
+        && *i == state.focus
+    {
+        return Some(t.clone());
     }
     let block = state.blocks().into_iter().nth(state.focus)?;
     Some(match block.kind {
@@ -590,10 +602,7 @@ mod scenarios {
         let mut s = sess("");
         focus(&mut s, 0);
         type_(&mut s, "- ");
-        assert!(matches!(
-            s.doc.blocks()[0].kind,
-            BlockKind::Bullet { .. }
-        ));
+        assert!(matches!(s.doc.blocks()[0].kind, BlockKind::Bullet { .. }));
         // Empty bullet body + Enter exits list.
         s.doc.caret = Some(0);
         enter_at(&mut s, 0, 0);
@@ -621,10 +630,7 @@ mod scenarios {
     fn focus_on_embed_ensures_source_reveal() {
         let mut s = sess("![[pic.png]]");
         s.dispatch(EditorCmd::Focus(0));
-        assert_eq!(
-            s.doc.reveal,
-            Some((0, "![[pic.png]]".into()))
-        );
+        assert_eq!(s.doc.reveal, Some((0, "![[pic.png]]".into())));
         assert!(s.doc_sel.is_none());
     }
 
@@ -687,10 +693,7 @@ mod scenarios {
             s.doc.blocks()[0].kind,
             BlockKind::Blockquote { .. }
         ));
-        assert!(matches!(
-            s.doc.blocks()[1].kind,
-            BlockKind::HorizontalRule
-        ));
+        assert!(matches!(s.doc.blocks()[1].kind, BlockKind::HorizontalRule));
         s.dispatch(EditorCmd::SetDocSel(Some(BlockRange::new(1, 1))));
         s.dispatch(EditorCmd::DeleteSel);
         assert_eq!(s.text(), "> a\n> b");

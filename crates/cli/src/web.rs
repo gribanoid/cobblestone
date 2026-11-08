@@ -378,11 +378,8 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
             _ => return Err("Invalid base64 character".into()),
         })
     }
-    let cleaned: Vec<u8> = input
-        .bytes()
-        .filter(|b| !b.is_ascii_whitespace())
-        .collect();
-    if cleaned.len() % 4 != 0 {
+    let cleaned: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if !cleaned.len().is_multiple_of(4) {
         return Err("Invalid base64 length".into());
     }
     let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);

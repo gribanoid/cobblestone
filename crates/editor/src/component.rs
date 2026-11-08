@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
 
+// Event handlers pass the existing editor signals explicitly.
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::block::{
-    code_fence_body_owned, join_blocks, parse_blocks, Block, BlockKind,
-};
-use crate::edit::{self, apply_body, apply_reveal, is_source_only, DocState};
+use crate::block::{Block, BlockKind, code_fence_body_owned, join_blocks, parse_blocks};
 use crate::clipboard::{ClipboardContent, PastedImage};
+use crate::edit::{self, DocState, apply_body, apply_reveal, is_source_only};
 use crate::history::History;
 use crate::selection::{self, BlockRange};
-use crate::session::{cut_doc_sel, EditorCmd, EditorEffect, EditorSession};
+use crate::session::{EditorCmd, EditorEffect, EditorSession, cut_doc_sel};
 
 #[derive(Clone, Copy, PartialEq)]
 struct EditorText {
@@ -57,7 +58,10 @@ pub fn MarkdownEditor(
     #[props(default)]
     insert_embed: Option<Signal<Option<String>>>,
 ) -> Element {
-    let value = EditorText { signal: value, on_change };
+    let value = EditorText {
+        signal: value,
+        on_change,
+    };
     // Open at the start of the file (remounts on note switch via host key).
     let focused = use_signal(|| Some(0usize));
     let focus_gen = use_signal(|| 0u64);
@@ -78,21 +82,19 @@ pub fn MarkdownEditor(
     // dioxus.send channel dies, while a sticky __cbMdShortcutBound flag would
     // leave a dead listener.
     use_hook({
-        let value = value;
-        let history = history;
-        let focused = focused;
-        let focus_gen = focus_gen;
-        let caret = caret;
-        let click_x = click_x;
-        let source_reveal = source_reveal;
-        let doc_sel = doc_sel;
         let mut drag_anchor = drag_anchor;
         move || {
             spawn(async move {
                 #[cfg(feature = "desktop")]
-                let script = concat!("const desktopClipboard = true;\n", include_str!("bridge.js"));
+                let script = concat!(
+                    "const desktopClipboard = true;\n",
+                    include_str!("bridge.js")
+                );
                 #[cfg(not(feature = "desktop"))]
-                let script = concat!("const desktopClipboard = false;\n", include_str!("bridge.js"));
+                let script = concat!(
+                    "const desktopClipboard = false;\n",
+                    include_str!("bridge.js")
+                );
                 let mut eval = document::eval(script);
                 loop {
                     let Ok(op) = eval.recv::<String>().await else {
@@ -311,9 +313,9 @@ pub fn MarkdownEditor(
                 }
                 // Replace doc selection with the typed character.
                 let range = *doc_sel.peek();
-                if let Some(range) = range {
-                    if let Key::Character(ref ch) = e.key() {
-                        if ch.chars().count() == 1 && !is_modified(&e) {
+                if let Some(range) = range
+                    && let Key::Character(ref ch) = e.key()
+                        && ch.chars().count() == 1 && !is_modified(&e) {
                             e.prevent_default();
                             let next = selection::replace_range(
                                 &value.peek(),
@@ -335,8 +337,6 @@ pub fn MarkdownEditor(
                             true,
                             );
                         }
-                    }
-                }
             },
             onmouseup: move |_| {
                 drag_anchor.set(None);
@@ -466,9 +466,7 @@ fn try_handle_shortcut(
 fn sync_doc_sel_clipboard(text: &str) {
     let json = json_string_literal(text);
     spawn(async move {
-        let _ = document::eval(&format!(
-            r#"window.__cbMdDocSelText = {json};"#
-        ));
+        let _ = document::eval(&format!(r#"window.__cbMdDocSelText = {json};"#));
     });
 }
 
@@ -538,16 +536,16 @@ fn apply_session_to_signals(
     if fx.clear_native_sel || fx.focus_root {
         clear_native_line_selection();
     }
-    if let Some((idx, pos)) = fx.place_caret {
-        if !fx.focus_root {
-            restore_line_caret_when(
-                Some(idx),
-                None,
-                Some(pos),
-                fx.scroll_into_view,
-                fx.expect_line.clone(),
-            );
-        }
+    if let Some((idx, pos)) = fx.place_caret
+        && !fx.focus_root
+    {
+        restore_line_caret_when(
+            Some(idx),
+            None,
+            Some(pos),
+            fx.scroll_into_view,
+            fx.expect_line.clone(),
+        );
     }
 }
 
@@ -970,18 +968,18 @@ fn schedule_blur_cleanup(
         }
         // Another line is focused (we deleted this one) — only clear our reveal
         // and land caret at EOL on the new line once.
-        if let Some(new_i) = *focused.peek() {
-            if new_i != index {
-                if source_reveal
-                    .peek()
-                    .as_ref()
-                    .is_some_and(|(i, _)| *i == index)
-                {
-                    source_reveal.set(None);
-                }
-                restore_line_caret(Some(new_i), None, None, true);
-                return;
+        if let Some(new_i) = *focused.peek()
+            && new_i != index
+        {
+            if source_reveal
+                .peek()
+                .as_ref()
+                .is_some_and(|(i, _)| *i == index)
+            {
+                source_reveal.set(None);
             }
+            restore_line_caret(Some(new_i), None, None, true);
+            return;
         }
         // Same line still logically focused but DOM blurred — soft refocus once.
         if focused.peek().as_ref() == Some(&index) {
@@ -1007,19 +1005,17 @@ fn list_indent_style(level: usize) -> String {
 }
 
 /// Live textarea selection `(a, b)` on the active line (char offsets).
-fn line_selection_range() -> impl std::future::Future<Output = (usize, usize)> {
-    async move {
-        let mut eval = document::eval(
-            r#"
-            const el = document.querySelector(
-              '.cb-md-block-active .cb-md-input, .cb-md-block-active .cb-md-textarea'
-            );
-            if (!el) { dioxus.send([0, 0]); return; }
-            dioxus.send([el.selectionStart|0, el.selectionEnd|0]);
-            "#,
+async fn line_selection_range() -> (usize, usize) {
+    let mut eval = document::eval(
+        r#"
+        const el = document.querySelector(
+          '.cb-md-block-active .cb-md-input, .cb-md-block-active .cb-md-textarea'
         );
-        eval.recv::<(usize, usize)>().await.unwrap_or((0, 0))
-    }
+        if (!el) { dioxus.send([0, 0]); return; }
+        dioxus.send([el.selectionStart|0, el.selectionEnd|0]);
+        "#,
+    );
+    eval.recv::<(usize, usize)>().await.unwrap_or((0, 0))
 }
 
 fn snapshot_doc(
@@ -1106,7 +1102,7 @@ fn enter_reveal_at(
         click_x,
         source_reveal,
         true,
-    true,
+        true,
     );
 }
 
@@ -1248,41 +1244,42 @@ fn BlockRow(
     }
 
     // Inactive image embed.
-    if let BlockKind::ImageEmbed { name, width } = &block.kind {
-        if !is_focused && !revealing {
-            let src = image_srcs.read().get(name).cloned();
-            let alt = name.clone();
-            let wattr = width.map(|w| w.to_string());
-            let raw = block.raw.clone();
-            return rsx! {
-                div {
-                    class: "{active_class} {kind_class}",
-                    "data-block-idx": "{index}",
-                    onmousedown: row_mousedown,
-                    onmouseenter: row_mouseenter,
-                    onclick: move |evt| {
-                        evt.stop_propagation();
-                        if drag_click_consumed() {
-                            return;
-                        }
-                        click_x.set(Some(evt.data().client_coordinates().x));
-                        enter_reveal(raw.clone(), edit::char_len(&raw));
-                    },
-                    if let Some(src) = src {
-                        img {
-                            class: "cb-embed-image",
-                            src: "{src}",
-                            alt: "{alt}",
-                            width: wattr.clone(),
-                        }
-                    } else {
-                        div { class: "cb-md-image-missing",
-                            "![[{alt}]]"
-                        }
+    if let BlockKind::ImageEmbed { name, width } = &block.kind
+        && !is_focused
+        && !revealing
+    {
+        let src = image_srcs.read().get(name).cloned();
+        let alt = name.clone();
+        let wattr = width.map(|w| w.to_string());
+        let raw = block.raw.clone();
+        return rsx! {
+            div {
+                class: "{active_class} {kind_class}",
+                "data-block-idx": "{index}",
+                onmousedown: row_mousedown,
+                onmouseenter: row_mouseenter,
+                onclick: move |evt| {
+                    evt.stop_propagation();
+                    if drag_click_consumed() {
+                        return;
+                    }
+                    click_x.set(Some(evt.data().client_coordinates().x));
+                    enter_reveal(raw.clone(), edit::char_len(&raw));
+                },
+                if let Some(src) = src {
+                    img {
+                        class: "cb-embed-image",
+                        src: "{src}",
+                        alt: "{alt}",
+                        width: wattr.clone(),
+                    }
+                } else {
+                    div { class: "cb-md-image-missing",
+                        "![[{alt}]]"
                     }
                 }
-            };
-        }
+            }
+        };
     }
 
     // Inactive wiki / markdown link — show label; click reveals raw syntax.
@@ -1322,41 +1319,41 @@ fn BlockRow(
     }
 
     // Inactive code fence.
-    if let BlockKind::CodeFence { lang } = &block.kind {
-        if !is_focused && !revealing {
-            let body = code_fence_body_owned(&block.raw);
-            let lang_label = lang.clone();
-            return rsx! {
-                div {
-                    class: "{active_class} {kind_class}",
-                    "data-block-idx": "{index}",
-                    onmousedown: row_mousedown,
-                    onmouseenter: row_mouseenter,
-                    onclick: move |evt| {
-                        evt.stop_propagation();
-                        if drag_click_consumed() {
-                            return;
-                        }
-                        click_x.set(Some(evt.data().client_coordinates().x));
-                        source_reveal.set(None);
-                        focus_block(index, None, focused, focus_gen, caret);
-                    },
-                    if !lang_label.is_empty() {
-                        div { class: "cb-md-code-lang", "{lang_label}" }
+    if let BlockKind::CodeFence { lang } = &block.kind
+        && !is_focused
+        && !revealing
+    {
+        let body = code_fence_body_owned(&block.raw);
+        let lang_label = lang.clone();
+        return rsx! {
+            div {
+                class: "{active_class} {kind_class}",
+                "data-block-idx": "{index}",
+                onmousedown: row_mousedown,
+                onmouseenter: row_mouseenter,
+                onclick: move |evt| {
+                    evt.stop_propagation();
+                    if drag_click_consumed() {
+                        return;
                     }
-                    pre { class: "cb-md-code-pre",
-                        code { "{body}" }
-                    }
+                    click_x.set(Some(evt.data().client_coordinates().x));
+                    source_reveal.set(None);
+                    focus_block(index, None, focused, focus_gen, caret);
+                },
+                if !lang_label.is_empty() {
+                    div { class: "cb-md-code-lang", "{lang_label}" }
                 }
-            };
-        }
+                pre { class: "cb-md-code-pre",
+                    code { "{body}" }
+                }
+            }
+        };
     }
 
     // Focused code fence.
     if is_focused && block.is_code_fence() && !revealing {
         let body = block.body().to_string();
-        let caret_pos: Option<usize> =
-            (*caret.peek()).map(|p| p.min(edit::char_len(&body)));
+        let caret_pos: Option<usize> = (*caret.peek()).map(|p| p.min(edit::char_len(&body)));
         let lang_label = match &block.kind {
             BlockKind::CodeFence { lang } => lang.clone(),
             _ => String::new(),
@@ -1409,7 +1406,11 @@ fn BlockRow(
     let auto_reveal = is_focused && !revealing && source_only;
     if auto_reveal {
         let raw = block.raw.clone();
-        if source_reveal.peek().as_ref().is_none_or(|(i, _)| *i != index) {
+        if source_reveal
+            .peek()
+            .as_ref()
+            .is_none_or(|(i, _)| *i != index)
+        {
             source_reveal.set(Some((index, raw)));
         }
     }
@@ -1431,8 +1432,7 @@ fn BlockRow(
     } else {
         block.body().to_string()
     };
-    let caret_pos: Option<usize> =
-        (*caret.peek()).map(|p| p.min(edit::char_len(&line_value)));
+    let caret_pos: Option<usize> = (*caret.peek()).map(|p| p.min(edit::char_len(&line_value)));
     let ol_marker = if revealing {
         None
     } else {
@@ -1718,4 +1718,3 @@ fn BlockRow(
         }
     }
 }
-

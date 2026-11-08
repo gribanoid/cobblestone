@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::actions::{attach_image, mark_dirty, AttachTarget};
+use crate::actions::{AttachTarget, attach_image, mark_dirty};
 use crate::backend::SharedBackend;
 use crate::ops::Ops;
 use crate::state::AppCtx;

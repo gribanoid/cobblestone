@@ -27,46 +27,49 @@ pub fn tokenize_inline(input: &str) -> Vec<InlineSpan> {
 
     while i < chars.len() {
         // Inline code `…`
-        if chars[i] == '`' {
-            if let Some(end) = chars[i + 1..].iter().position(|&c| c == '`') {
-                flush_plain(&mut plain, &mut out);
-                let body: String = chars[i + 1..i + 1 + end].iter().collect();
-                out.push(InlineSpan::Code(body));
-                i += end + 2;
-                continue;
-            }
+        if chars[i] == '`'
+            && let Some(end) = chars[i + 1..].iter().position(|&c| c == '`')
+        {
+            flush_plain(&mut plain, &mut out);
+            let body: String = chars[i + 1..i + 1 + end].iter().collect();
+            out.push(InlineSpan::Code(body));
+            i += end + 2;
+            continue;
         }
         // Strike ~~…~~
-        if chars[i] == '~' && chars.get(i + 1) == Some(&'~') {
-            if let Some(rel) = find_close(&chars, i + 2, &['~', '~']) {
-                flush_plain(&mut plain, &mut out);
-                let body: String = chars[i + 2..rel].iter().collect();
-                out.push(InlineSpan::Strike(body));
-                i = rel + 2;
-                continue;
-            }
+        if chars[i] == '~'
+            && chars.get(i + 1) == Some(&'~')
+            && let Some(rel) = find_close(&chars, i + 2, &['~', '~'])
+        {
+            flush_plain(&mut plain, &mut out);
+            let body: String = chars[i + 2..rel].iter().collect();
+            out.push(InlineSpan::Strike(body));
+            i = rel + 2;
+            continue;
         }
         // Strong **…**
-        if chars[i] == '*' && chars.get(i + 1) == Some(&'*') {
-            if let Some(rel) = find_close(&chars, i + 2, &['*', '*']) {
-                flush_plain(&mut plain, &mut out);
-                let body: String = chars[i + 2..rel].iter().collect();
-                out.push(InlineSpan::Strong(body));
-                i = rel + 2;
-                continue;
-            }
+        if chars[i] == '*'
+            && chars.get(i + 1) == Some(&'*')
+            && let Some(rel) = find_close(&chars, i + 2, &['*', '*'])
+        {
+            flush_plain(&mut plain, &mut out);
+            let body: String = chars[i + 2..rel].iter().collect();
+            out.push(InlineSpan::Strong(body));
+            i = rel + 2;
+            continue;
         }
         // Em *…* (not part of **)
-        if chars[i] == '*' && chars.get(i + 1) != Some(&'*') {
-            if let Some(rel) = chars[i + 1..].iter().position(|&c| c == '*') {
-                let end = i + 1 + rel;
-                if end + 1 >= chars.len() || chars[end + 1] != '*' {
-                    flush_plain(&mut plain, &mut out);
-                    let body: String = chars[i + 1..end].iter().collect();
-                    out.push(InlineSpan::Em(body));
-                    i = end + 1;
-                    continue;
-                }
+        if chars[i] == '*'
+            && chars.get(i + 1) != Some(&'*')
+            && let Some(rel) = chars[i + 1..].iter().position(|&c| c == '*')
+        {
+            let end = i + 1 + rel;
+            if end + 1 >= chars.len() || chars[end + 1] != '*' {
+                flush_plain(&mut plain, &mut out);
+                let body: String = chars[i + 1..end].iter().collect();
+                out.push(InlineSpan::Em(body));
+                i = end + 1;
+                continue;
             }
         }
         plain.push(chars[i]);

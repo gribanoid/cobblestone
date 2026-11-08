@@ -38,7 +38,7 @@ pub fn write_text(text: &str) -> Result<(), String> {
 }
 
 /// Read what a paste should insert: copied image files first, then text,
-/// then raw image pixels (Obsidian order).
+/// then raw image pixels (clipboard image order).
 pub fn read_paste() -> Option<ClipboardContent> {
     #[cfg(feature = "desktop")]
     {
@@ -58,18 +58,19 @@ pub fn read_paste() -> Option<ClipboardContent> {
                 }
             }
         }
-        if let Ok(text) = clipboard.get_text() {
-            if !text.is_empty() {
-                return Some(ClipboardContent::Text(text));
-            }
+        if let Ok(text) = clipboard.get_text()
+            && !text.is_empty()
+        {
+            return Some(ClipboardContent::Text(text));
         }
-        if let Ok(img) = clipboard.get_image() {
-            if let Some(bytes) = encode_png(img.width as u32, img.height as u32, img.bytes.into_owned()) {
-                return Some(ClipboardContent::Image(PastedImage {
-                    filename: None,
-                    bytes,
-                }));
-            }
+        if let Ok(img) = clipboard.get_image()
+            && let Some(bytes) =
+                encode_png(img.width as u32, img.height as u32, img.bytes.into_owned())
+        {
+            return Some(ClipboardContent::Image(PastedImage {
+                filename: None,
+                bytes,
+            }));
         }
         None
     }

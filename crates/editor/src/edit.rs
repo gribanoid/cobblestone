@@ -2,7 +2,7 @@
 
 //! Pure document-edit operations used by the UI (and unit-tested here).
 
-use crate::block::{join_blocks, parse_blocks, Block, BlockKind};
+use crate::block::{Block, BlockKind, join_blocks, parse_blocks};
 
 /// Editor document snapshot for deterministic transforms.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,7 +101,7 @@ pub fn byte_at(s: &str, char_idx: usize) -> usize {
         .unwrap_or(s.len())
 }
 
-fn write_line_as_paragraph(blocks: &mut Vec<Block>, index: usize, raw: &str) {
+fn write_line_as_paragraph(blocks: &mut [Block], index: usize, raw: &str) {
     if index >= blocks.len() {
         return;
     }
@@ -172,8 +172,8 @@ pub fn apply_reveal(state: &DocState, text: &str) -> DocState {
     if index >= blocks.len() {
         return state.clone();
     }
-    // Cleared the revealed marker (`-` / `1.`) → delete this line and land on
-    // the previous one (Obsidian). First line becomes a plain empty paragraph.
+    // Cleared the revealed marker (`-` / `1.`) → delete this line and join to
+    // the previous one. First line becomes a plain empty paragraph.
     if text.is_empty() {
         return delete_line_join_prev(blocks, index);
     }
@@ -224,13 +224,13 @@ pub fn reveal_backspace_char(state: &DocState) -> DocState {
     apply_reveal(state, &next)
 }
 
-fn unwrap_or_outdent(blocks: &mut Vec<Block>, index: usize) -> (usize, Option<(usize, String)>) {
+fn unwrap_or_outdent(blocks: &mut [Block], index: usize) -> (usize, Option<(usize, String)>) {
     let block = blocks[index].clone();
-    if block.list_indent_level() > 0 {
-        if let Some(next) = block.with_indent_delta(false) {
-            blocks[index] = next;
-            return (0, None);
-        }
+    if block.list_indent_level() > 0
+        && let Some(next) = block.with_indent_delta(false)
+    {
+        blocks[index] = next;
+        return (0, None);
     }
     let raw = reveal_prefix(&block);
     let len = char_len(&raw);
@@ -292,7 +292,10 @@ pub fn paste_line_text(state: &DocState) -> String {
 pub fn own_line_insert_pos(state: &DocState, pos: usize, dom_value: &str) -> usize {
     let line = paste_line_text(state);
     let len = char_len(&line);
-    let revealing = state.reveal.as_ref().is_some_and(|(i, _)| *i == state.focus);
+    let revealing = state
+        .reveal
+        .as_ref()
+        .is_some_and(|(i, _)| *i == state.focus);
     let splittable = !revealing
         && state.blocks().get(state.focus).is_some_and(|b| {
             matches!(
@@ -376,10 +379,7 @@ pub fn paste_text(state: &DocState, pasted: &str, caret: usize) -> DocState {
         blocks.insert(index + offset, Block::parse_line(&raw));
     }
     let focus = index + offset;
-    let caret_at = blocks
-        .get(focus)
-        .map(|b| char_len(b.body()))
-        .unwrap_or(0);
+    let caret_at = blocks.get(focus).map(|b| char_len(b.body())).unwrap_or(0);
     DocState::with_blocks(blocks, focus, Some(caret_at), None)
 }
 
@@ -650,10 +650,7 @@ mod tests {
         let s = focus("![[Pasted image 1.png]]", 0);
         // DOM shows only the name (stale vs raw model) → insert at end of raw.
         let raw_len = char_len("![[Pasted image 1.png]]");
-        assert_eq!(
-            own_line_insert_pos(&s, 18, "Pasted image 1.png"),
-            raw_len
-        );
+        assert_eq!(own_line_insert_pos(&s, 18, "Pasted image 1.png"), raw_len);
         let at = own_line_insert_pos(&s, 18, "Pasted image 1.png");
         let next = paste_text(&s, "\n![[b.png]]", at);
         assert_eq!(next.text, "![[Pasted image 1.png]]\n![[b.png]]");

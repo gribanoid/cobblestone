@@ -63,26 +63,25 @@ pub fn DragPreview() -> Element {
 
 /// Hide the OS/browser default drag ghost when the platform allows it (wasm).
 pub fn suppress_native_drag_ghost(data: &dioxus::html::DragData) {
-    let _ = data.data_transfer().set_data("text/plain", "cobblestone-dnd");
+    let _ = data
+        .data_transfer()
+        .set_data("text/plain", "cobblestone-dnd");
     data.data_transfer().set_effect_allowed("move");
 
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen::JsCast;
-        if let Some(evt) = data.downcast::<web_sys::DragEvent>() {
-            if let Some(dt) = evt.data_transfer() {
-                if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                    if let Ok(img) = doc.create_element("img") {
-                        if let Ok(img) = img.dyn_into::<web_sys::HtmlImageElement>() {
-                            // 1×1 transparent GIF — empty native ghost, we draw our own card.
-                            img.set_src(
-                                "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
-                            );
-                            dt.set_drag_image(&img, 0, 0);
-                        }
-                    }
-                }
-            }
+        if let Some(evt) = data.downcast::<web_sys::DragEvent>()
+            && let Some(dt) = evt.data_transfer()
+            && let Some(doc) = web_sys::window().and_then(|w| w.document())
+            && let Ok(img) = doc.create_element("img")
+            && let Ok(img) = img.dyn_into::<web_sys::HtmlImageElement>()
+        {
+            // 1×1 transparent GIF — empty native ghost, we draw our own card.
+            img.set_src(
+                "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+            );
+            dt.set_drag_image(&img, 0, 0);
         }
     }
 }

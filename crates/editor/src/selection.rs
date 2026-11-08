@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//! Document-level selection across line blocks (Obsidian-style).
+//! Document-level selection across line blocks (vault-style).
 //!
 //! Native `<textarea>` selection cannot span rows; we track a block range and
 //! paint it in CSS, then serve copy/cut/delete from the Markdown source.
 
-use crate::block::{join_blocks, parse_blocks, Block, BlockKind};
+use crate::block::{Block, BlockKind, join_blocks, parse_blocks};
 use crate::edit::DocState;
 
 /// Inclusive block-index range (document order).
