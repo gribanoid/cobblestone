@@ -4,6 +4,9 @@ Cobblestone is an independent MIT-licensed project. See [LICENSE](LICENSE).
 Product and plugin names below identify upstream references. Their trademarks
 belong to their respective owners.
 
+The bundled CodeMirror editor includes its dependencies' license notices in
+`crates/ui/codemirror/editor.bundle.js`.
+
 ## Upstream references
 
 The plugin host runs Rust implementations. These upstream projects document
