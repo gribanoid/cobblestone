@@ -374,9 +374,6 @@ pub fn cmd_plugin_run(store: &Store, id: &str) -> Result<()> {
     for path in host.workspace.take_open_requests() {
         println!("open: {path}");
     }
-    for notice in host.take_notices() {
-        println!("{notice}");
-    }
     Ok(())
 }
 
