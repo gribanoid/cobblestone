@@ -76,7 +76,7 @@ pub fn EditorArea() -> Element {
                     BrandIcon { large: true }
                     h2 { "Cobblestone" }
                     p {
-                        if has_notes { "Open a note from the sidebar or start something new." }
+                        if has_notes { "Open a note from the sidebar." }
                         else { "Create your first note in this vault." }
                     }
                     div { class: "welcome-actions",

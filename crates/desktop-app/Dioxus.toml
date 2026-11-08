@@ -1,0 +1,8 @@
+[application]
+name = "cobblestone"
+default_platform = "desktop"
+
+[bundle]
+identifier = "dev.cobblestone.app"
+publisher = "Cobblestone"
+icon = ["../ui/assets/cobblestone-stone.png"]

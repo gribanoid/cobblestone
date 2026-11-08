@@ -1,4 +1,4 @@
-.PHONY: help deps desktop desktop-build web web-build tui cli test fmt lint clippy deny doc ci dx-install
+.PHONY: help deps desktop desktop-build macos-bundle web web-build tui cli test fmt lint clippy deny doc ci dx-install
 
 # Where `dx` writes the bundled web app (respects CARGO_TARGET_DIR).
 DX_WEB_PUBLIC = $(shell find "$(or $(CARGO_TARGET_DIR),target)" -path '*/cobblestone-web/*/web/public' -type d 2>/dev/null | head -1)
@@ -8,6 +8,7 @@ help:
 	@echo "  make deps           Install Rust deps + dioxus CLI"
 	@echo "  make desktop        Run the native Dioxus desktop app"
 	@echo "  make desktop-build  Build the desktop release binary"
+	@echo "  make macos-bundle   Build the macOS app with its Dock icon"
 	@echo "  make web-build      Build the WASM web UI (required before cb web)"
 	@echo "  make web            Run the browser UI on the default port"
 	@echo "  make tui            Run the terminal UI"
@@ -31,6 +32,9 @@ desktop: deps
 
 desktop-build: deps
 	cargo build -p cobblestone-desktop --release
+
+macos-bundle: dx-install
+	cd crates/desktop-app && dx bundle --macos --package-types macos --release --locked --out-dir ../../target/macos
 
 web-build: deps
 	cd crates/ui && dx build --web --release

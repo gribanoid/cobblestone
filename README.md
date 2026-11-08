@@ -35,6 +35,7 @@ make deps            # cargo fetch + dioxus-cli
 ```bash
 make desktop         # run the native Dioxus desktop app
 make desktop-build   # release binary: target/release/cobblestone
+make macos-bundle    # macOS application: target/macos/Cobblestone.app
 ```
 
 **GitHub release:** push a tag `v*` (e.g. `v0.1.0`) — CI builds platform binaries and attaches them to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).

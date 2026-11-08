@@ -903,8 +903,8 @@ input, textarea { font: inherit; outline: none; color: inherit }
   gap: 12px;
   text-align: center;
 }
-.app-icon-large { width: 52px; height: 52px; }
-.welcome h2 { font-size: 26px; color: var(--text); font-weight: 650; }
+.app-icon-large { width: 72px; height: 72px; }
+.welcome h2 { font-size: 22px; color: var(--text); font-weight: 600; line-height: 1.2; }
 .welcome p { max-width: 36ch; line-height: 1.55; color: var(--subtext); }
 .welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
 .welcome-button {
