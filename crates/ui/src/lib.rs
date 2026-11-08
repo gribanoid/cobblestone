@@ -24,12 +24,14 @@ pub mod util;
 pub use app::App;
 pub use backend::{SharedBackend, VaultBackend};
 
-/// Launch the desktop UI with a direct `Store` backend.
+/// Launch the desktop UI with a direct `Store` backend and first-party plugins.
 #[cfg(feature = "desktop")]
 pub fn launch_desktop(store: cobblestone_core::Store) {
-    let backend = backend::DirectStore::shared(store);
+    let (backend, host) =
+        backend::DirectStore::shared_with_plugins(store).expect("Failed to start plugin host");
     dioxus::LaunchBuilder::desktop()
         .with_context(backend)
+        .with_context(host)
         .launch(App);
 }
 

@@ -31,8 +31,14 @@ pub struct AppCtx {
     pub dirty_gen: Signal<u64>,
     pub theme: Signal<Theme>,
     pub error: Signal<Option<String>>,
+    /// Soft plugin/host notices (toast).
+    pub notice: Signal<Option<String>>,
     pub busy: Signal<bool>,
     pub modal: Signal<ModalState>,
+    /// When true, right panel shows vault tasks section.
+    pub tasks_panel: Signal<bool>,
+    /// Bumped to focus the sidebar search input.
+    pub focus_search_gen: Signal<u64>,
     pub context_menu: Signal<Option<ContextMenuState>>,
     pub drag: Signal<Option<DragState>>,
     pub tree_sort: Signal<TreeSort>,
@@ -40,6 +46,15 @@ pub struct AppCtx {
     pub panel_open: Signal<bool>,
     /// Line for the editor to insert at the caret (e.g. a saved image embed).
     pub editor_insert: Signal<Option<String>>,
+    /// Bumps when a plugin replaces the active document on disk.
+    pub editor_revision: Signal<u64>,
+    /// Source / Live Preview / Reading (vault-style).
+    pub editor_mode: Signal<EditorMode>,
+    pub editor_preferences: Signal<EditorPreferences>,
+    /// Current project / vault label (status bar / sidebar).
+    pub project_label: Signal<String>,
+    /// Overflow menu (⋯) open on the note toolbar.
+    pub note_menu_open: Signal<bool>,
 }
 
 impl AppCtx {
@@ -60,13 +75,21 @@ impl AppCtx {
             dirty_gen: use_signal(|| 0u64),
             theme: use_signal(Theme::load),
             error: use_signal(|| None),
+            notice: use_signal(|| None),
             busy: use_signal(|| false),
             modal: use_signal(|| ModalState::None),
             context_menu: use_signal(|| None),
             drag: use_signal(|| None),
             tree_sort: use_signal(|| TreeSort::NameAsc),
             panel_open: use_signal(|| false),
+            tasks_panel: use_signal(|| false),
+            focus_search_gen: use_signal(|| 0u64),
             editor_insert: use_signal(|| None),
+            editor_revision: use_signal(|| 0),
+            editor_mode: use_signal(EditorMode::default),
+            editor_preferences: use_signal(EditorPreferences::default),
+            project_label: use_signal(|| "Cobblestone".into()),
+            note_menu_open: use_signal(|| false),
         };
         use_context_provider(|| ctx);
         ctx
@@ -74,6 +97,10 @@ impl AppCtx {
 
     pub fn show_error(&mut self, msg: impl Into<String>) {
         self.error.set(Some(msg.into()));
+    }
+
+    pub fn show_notice(&mut self, msg: impl Into<String>) {
+        self.notice.set(Some(msg.into()));
     }
 
     pub fn dismiss_overlays(&mut self) {
@@ -132,6 +159,77 @@ impl TreeSort {
     }
 }
 
+/// vault-style note view modes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorMode {
+    LivePreview,
+    #[default]
+    Source,
+    Reading,
+}
+
+impl EditorMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LivePreview => "Live Preview (beta)",
+            Self::Source => "CodeMirror",
+            Self::Reading => "Reading",
+        }
+    }
+
+    pub fn is_editing(self) -> bool {
+        !matches!(self, Self::Reading)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct EditorPreferences {
+    pub live_preview: bool,
+    pub line_numbers: bool,
+    pub line_wrapping: bool,
+    pub tab_width: u8,
+}
+
+impl Default for EditorPreferences {
+    fn default() -> Self {
+        Self {
+            live_preview: false,
+            line_numbers: true,
+            line_wrapping: true,
+            tab_width: 2,
+        }
+    }
+}
+
+impl EditorPreferences {
+    pub fn editing_mode(self) -> EditorMode {
+        if self.live_preview {
+            EditorMode::LivePreview
+        } else {
+            EditorMode::Source
+        }
+    }
+
+    pub fn apply(mut self, mut ctx: AppCtx) {
+        if !matches!(self.tab_width, 2 | 4 | 8) {
+            self.tab_width = Self::default().tab_width;
+        }
+        ctx.editor_preferences.set(self);
+        if ctx.editor_mode.peek().is_editing() {
+            ctx.editor_mode.set(self.editing_mode());
+        }
+    }
+
+    pub fn persist(self) {
+        let eval = document::eval(
+            r#"try { localStorage.setItem('cb-editor', JSON.stringify(await dioxus.recv())); } catch (_) {}"#,
+        );
+        let _ = eval.send(self);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Default)]
 pub enum ModalState {
     #[default]
@@ -152,6 +250,18 @@ pub enum ModalState {
         kind: DeleteKind,
         title: String,
         message: String,
+    },
+    /// Project / vault switcher.
+    Projects,
+    /// App settings (theme, shortcuts, plugins entry).
+    Settings,
+    /// First-party plugin command palette.
+    CommandPalette,
+    /// Ask for a string before running a plugin command (Quick Capture / titles).
+    PromptValue {
+        title: String,
+        default: String,
+        pending_command: String,
     },
 }
 
@@ -184,16 +294,34 @@ pub struct ContextMenuItem {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContextAction {
-    NewNote { folder: Option<String> },
-    NewFolder { parent: Option<String> },
-    RenameNote { slug: String },
-    RenameFolder { path: String },
-    DeleteNote { slug: String },
-    DeleteFolder { path: String },
-    DeleteFile { path: String },
+    NewNote {
+        folder: Option<String>,
+    },
+    NewFolder {
+        parent: Option<String>,
+    },
+    RenameNote {
+        slug: String,
+    },
+    RenameFolder {
+        path: String,
+    },
+    DeleteNote {
+        slug: String,
+    },
+    DeleteFolder {
+        path: String,
+    },
+    DeleteFile {
+        path: String,
+    },
     /// Insert `text` as its own line at the editor caret.
-    InsertInNote { text: String },
-    Copy { text: String },
+    InsertInNote {
+        text: String,
+    },
+    Copy {
+        text: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -42,6 +42,7 @@ impl Theme {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            // Desktop: initial paint is dark; `set_document_theme` restores from localStorage.
             Self::Dark
         }
     }
@@ -53,6 +54,7 @@ impl Theme {
                 let _ = s.set_item("cb-theme", self.as_str());
             }
         }
+        let _ = self;
     }
 }
 

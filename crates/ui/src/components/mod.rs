@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 
+mod codemirror;
 mod context_menu;
 mod drag_preview;
 mod editor;
 mod md_editor;
 mod modals;
 mod panel;
+mod settings;
 mod sidebar;
 pub mod tree;
 

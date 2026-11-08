@@ -2,11 +2,11 @@
 
 use dioxus::prelude::*;
 
+use super::drag_preview::suppress_native_drag_ghost;
 use crate::actions::{
     file_menu_items, folder_menu_items, note_menu_items, open_context_menu, root_menu_items,
     toggle_folder,
 };
-use super::drag_preview::suppress_native_drag_ghost;
 use crate::backend::SharedBackend;
 use crate::icons::{IconChevron, IconFile, IconFolder, IconImage};
 use crate::models::VaultNode;
@@ -108,7 +108,7 @@ fn TreeNode(
     }
 }
 
-/// Attachment row (image / PDF). Hover shows an image preview (Obsidian-style);
+/// Attachment row (image / PDF). Hover shows an image preview (vault-style);
 /// right-click → insert / copy embed / delete.
 #[component]
 fn FileNode(name: String, path: String) -> Element {

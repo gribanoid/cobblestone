@@ -8,7 +8,7 @@
 
 Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, or a fast place to capture thoughts.
 
-**Status:** v0.2 in progress — see [ROADMAP.md](ROADMAP.md) for what's shipped and what's next.
+**Status:** v0.8 plugin platform + editor modes + projects in progress — see [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -83,12 +83,20 @@ Desktop and browser share the same **Dioxus** UI (`cobblestone-ui`). Desktop cal
 - Dark/light theme
 - Info panel — tags, metadata, outgoing wikilinks, backlinks (clickable)
 
-Wikilinks (`[[Note Title]]`) are parsed in core and shown in the info panel. Clicking a link in the **preview body** is [planned](ROADMAP.md).
+CodeMirror is the default Markdown editor on desktop and web. Settings let you
+choose line numbers, line wrapping, tab width, or the Rust Live Preview beta.
+Use `Ctrl+E` / `⌘E` to switch between editing and reading.
+
+To rebuild the bundled CodeMirror asset after changing its source, run
+`npm ci` and `npm run build` in `crates/ui/codemirror`. Cargo uses the checked-in
+bundle directly.
+
+Wikilinks (`[[Note Title]]`) appear in the info panel and open matching notes from Reading view.
 
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+S` / `⌘S` | Save current note |
-| `Tab` (in editor) | Insert 2 spaces |
+| `Tab` (in CodeMirror) | Indent using the configured width |
 
 ### Web — `cb web`
 
@@ -217,6 +225,14 @@ Flat list of all notes (newest first) with live preview. Folder tree navigation 
 
 ---
 
+## Plugins & licensing
+
+Cobblestone ships a **first-party Rust** plugin API (`cobblestone-plugin-api`). It does **not** load foreign JavaScript community plugins. Built-ins include Tasks, Quick Capture, Periodic Notes, Dynamic Templates, and Omni search.
+
+Third-party names appear in [NOTICE](NOTICE) only for attribution and trademark disclaimer. See also [docs/plugin-targets.md](docs/plugin-targets.md) and [ROADMAP v0.8](ROADMAP.md).
+
+---
+
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT License — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

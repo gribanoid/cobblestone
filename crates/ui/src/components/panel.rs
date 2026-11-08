@@ -15,6 +15,7 @@ pub fn RightPanel() -> Element {
     let notes = ctx.notes;
     let graph = ctx.graph;
     let panel_open = ctx.panel_open;
+    let tasks_panel = ctx.tasks_panel;
 
     if !*panel_open.read() {
         return rsx! {
@@ -89,6 +90,9 @@ pub fn RightPanel() -> Element {
                     empty: "No backlinks yet".to_string(),
                     links: g.backlinks,
                 }
+                if *tasks_panel.read() {
+                    TasksPanelSection {}
+                }
                 if show_move {
                     section { class: "panel-section",
                         h3 { "Move" }
@@ -134,6 +138,66 @@ fn LinkSection(title: String, empty: String, links: Vec<LinkedNote>) -> Element 
                                     "data-slug": "{slug}",
                                     onclick: move |_| ops.send(AppOp::OpenNote(slug.clone())),
                                     "{title}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TasksPanelSection() -> Element {
+    let ops = use_context::<Ops>();
+    let rows = use_signal(Vec::<(String, String, usize, String)>::new);
+
+    #[cfg(feature = "desktop")]
+    {
+        use cobblestone_plugin_host::SharedPluginHost;
+        let mut rows = rows;
+        let ctx = use_context::<AppCtx>();
+        let host = try_use_context::<SharedPluginHost>();
+        use_effect(move || {
+            drop(ctx.notes.read());
+            let mut list = Vec::new();
+            if let Some(host) = host.clone()
+                && let Ok(h) = host.lock()
+                && h.is_enabled("tasks")
+                && let Ok(tasks) = cobblestone_plugin_tasks::TasksPlugin::index_vault(&h.app)
+            {
+                for t in tasks.into_iter().filter(|t| !t.done).take(40) {
+                    let slug = t.path.strip_suffix(".md").unwrap_or(&t.path).to_owned();
+                    list.push((slug, t.description, t.line, t.due.unwrap_or_default()));
+                }
+            }
+            rows.set(list);
+        });
+    }
+
+    rsx! {
+        section { class: "panel-section",
+            h3 { "Open tasks" }
+            if rows.read().is_empty() {
+                p { class: "panel-muted", "No open tasks" }
+            } else {
+                div { class: "panel-link-list",
+                    for (slug, desc, line, due) in rows.read().clone() {
+                        {
+                            let slug_open = slug.clone();
+                            let label = if due.is_empty() {
+                                desc.to_string()
+                            } else {
+                                format!("{desc} · {due}")
+                            };
+                            rsx! {
+                                button {
+                                    r#type: "button",
+                                    class: "panel-link",
+                                    title: "{slug}:{line}",
+                                    onclick: move |_| ops.send(AppOp::OpenNote(slug_open.clone())),
+                                    "{label}"
                                 }
                             }
                         }

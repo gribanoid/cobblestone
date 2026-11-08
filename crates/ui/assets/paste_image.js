@@ -1,4 +1,4 @@
-// Obsidian-style image paste + drag-and-drop into the markdown editor.
+// vault-style image paste + drag-and-drop into the markdown editor.
 // JS → { filename, data_base64 } → Rust saves to attachments/ → appends ![[name]].
 (async function cobblestoneAttachImage() {
   function pad2(n) {
@@ -30,7 +30,7 @@
     return "Pasted image " + stamp() + "." + extFromMime(mime);
   }
 
-  /** Keep original name for file drops (Obsidian-style); sanitize lightly. */
+  /** Keep original name for file drops (vault-style); sanitize lightly. */
   function droppedImageFilename(file) {
     let name = (file && file.name) || "";
     name = name.replace(/[\\/]/g, "-").trim();
@@ -56,7 +56,7 @@
     return Array.prototype.indexOf.call(dt.types, "Files") >= 0;
   }
 
-  /** Editor surface: edit host or whole note pane (Obsidian drops on the note). */
+  /** Editor surface: edit host or whole note pane (drops on the note pane). */
   function editorHostFromEvent(e) {
     const t = e.target;
     if (!t || !t.closest) return null;

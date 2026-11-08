@@ -6,7 +6,7 @@ use crate::actions::{reveal_folder, schedule_search, toggle_expand_all};
 use crate::components::tree::VaultTree;
 use crate::icons::{
     IconArrowUpDown, IconCheck, IconChevronsUpDown, IconFile, IconFolder, IconFolderPlus,
-    IconSquarePen,
+    IconSettings, IconSquarePen,
 };
 use crate::models::SearchHit;
 use crate::ops::{AppOp, Ops};
@@ -25,12 +25,25 @@ pub fn Sidebar() -> Element {
     let active = ctx.active_slug;
     let tree_sort = ctx.tree_sort;
     let mut sort_open = use_signal(|| false);
+    let focus_gen = ctx.focus_search_gen;
+
+    use_effect(move || {
+        let tick = *focus_gen.read();
+        if tick == 0 {
+            return;
+        }
+        let _ = document::eval(
+            "(function(){var el=document.getElementById('search'); if(el){el.focus(); el.select && el.select();}})()",
+        );
+    });
 
     let sorted_tree = {
         let mut nodes = tree.read().clone();
         sort_vault_tree(&mut nodes, *tree_sort.read());
         nodes
     };
+
+    let project_label = ctx.project_label;
 
     rsx! {
         aside { class: "sidebar",
@@ -181,15 +194,37 @@ pub fn Sidebar() -> Element {
                     VaultTree { nodes: sorted_tree }
                 }
             }
+            div { class: "sidebar-footer",
+                button {
+                    class: "vault-switcher",
+                    r#type: "button",
+                    title: "Switch project",
+                    aria_label: "Switch project",
+                    onclick: move |_| {
+                        ctx.modal.set(ModalState::Projects);
+                    },
+                    span { class: "vault-switcher-name", "{project_label}" }
+                    span { class: "vault-switcher-chevron", aria_hidden: "true",
+                        IconChevronsUpDown {}
+                    }
+                }
+                button {
+                    class: "icon-tool-btn sidebar-settings-btn",
+                    r#type: "button",
+                    title: "Settings",
+                    aria_label: "Settings",
+                    onclick: move |_| {
+                        ctx.modal.set(ModalState::Settings);
+                    },
+                    IconSettings {}
+                }
+            }
         }
     }
 }
 
 #[component]
-fn SortMenuItems(
-    mut tree_sort: Signal<TreeSort>,
-    mut sort_open: Signal<bool>,
-) -> Element {
+fn SortMenuItems(mut tree_sort: Signal<TreeSort>, mut sort_open: Signal<bool>) -> Element {
     let current = *tree_sort.read();
     rsx! {
         for mode in TreeSort::ALL {
@@ -221,8 +256,5 @@ fn SortMenuItems(
 }
 
 fn needs_sort_separator(mode: TreeSort) -> bool {
-    matches!(
-        mode,
-        TreeSort::ModifiedNew | TreeSort::CreatedNew
-    )
+    matches!(mode, TreeSort::ModifiedNew | TreeSort::CreatedNew)
 }

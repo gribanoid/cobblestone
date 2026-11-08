@@ -1,190 +1,189 @@
-# 🗺 Cobblestone Roadmap
+# Cobblestone Roadmap
 
-Items are roughly ordered by priority within each milestone.
+Items are roughly ordered by priority. Product stays **MIT**. See [README](README.md), [NOTICE](NOTICE), [docs/plugin-bridge.md](docs/plugin-bridge.md).
 
-**Current focus:** v0.2 — polish and power-user features. See also [README](README.md) for what ships today.
-
----
-
-## ✅ v0.1 — Foundation
-
-- [x] Plain Markdown storage in `~/.cobblestone`
-- [x] `cobblestone-core` shared library (workspace crate)
-- [x] CLI (`cb`) — `ls`, `new`, `show`, `edit`, `rm`, `search`
-- [x] `-i` flag — full-screen TUI (ratatui + crossterm)
-- [x] `cb web` — embedded local web server (axum) with browser UI
-- [x] Web UI — dark/light theme, live Markdown preview, auto-save
-- [x] Desktop app scaffold (historically Tauri; now Dioxus)
-- [x] Tag extraction (`#tag` syntax), full-text search
-- [x] MIT license
+**Current focus:** wire plugins into everyday UX (search, tasks, settings) + vault reliability (watcher, wikilinks).
 
 ---
 
-## 🔧 v0.2 — Polish & Power User *(current)*
+## v0.1 — Foundation
 
-### Shipped
-
-- [x] **Rust-only graphical UI** — shared Dioxus UI (`cobblestone-ui`) for desktop and web WASM
-- [x] **Desktop app** — Dioxus desktop + in-process `cobblestone-core` (`DirectStore`)
-- [x] **Desktop note CRUD** — list, open, create, edit, save, delete
-- [x] **Desktop backend search** — sidebar uses the shared storage search path
-- [x] **Desktop note metadata panel** — tags, size, modified date, links, backlinks
-- [x] **Delete confirmation** — destructive actions ask before removing notes or folders
-- [x] **Nested file tree** — hierarchical folders and notes in web & desktop
-- [x] **File operations in graphical UI** — create, rename, move, delete notes and folders; drag-and-drop; context menus
-- [x] **Nested storage in core** — subdirectories, `list_tree()`, move/rename/delete folder APIs
-- [x] **Wikilink graph in core** — `extract_wikilinks()`, `Store::note_graph()` shared by web API and desktop
-- [x] **Wikilinks info panel** — outgoing links and backlinks shown in the side panel (clickable)
-- [x] **`cobblestone-editor`** — own near-WYSIWYG Markdown editor crate (replaces CodeMirror); live lists/headings, `![[image]]` embeds, paste-to-attachments
-- [x] **EditorSession + scenario TDD** — pure `EditorCmd`/`EditorEffect` orchestration (`session.rs`); History snapshots restore focus/caret/reveal; regression scenarios for caret, lists, embeds, selection
-- [x] **Editor block kinds** — task lists `- [ ]`, blockquotes `>`, horizontal rules; inline tokenizer for live-hide (`inline.rs`)
-
-### Next up
-
-- [ ] **Workspace folder selection** — open an existing Markdown folder instead of only `~/.cobblestone`
-- [ ] **Wikilinks in preview** — click `[[Note Title]]` in the rendered Markdown body
-- [ ] **Backlink line highlights** — highlight lines that mention the current note
-- [ ] **Daily note** — `cb today` opens/creates a note for today's date
-- [ ] **Note templates** — `cb new --template meeting`
-- [ ] **Pinned notes** — appear at top of list
-- [ ] **Configurable storage** — `CB_DIR` env var or `~/.config/cobblestone/config.toml`
-- [ ] **Shell completions** — bash, zsh, fish via `clap_complete`
-- [ ] **TUI folder tree** — hierarchical navigation in `cb -i` (today: flat list of all notes)
-- [ ] **TUI inline editing** — edit without leaving `cb -i`
-- [ ] **Mouse support** in TUI
+- [x] Plain Markdown storage + `cobblestone-core`
+- [x] CLI (`cb`), TUI (`-i`), `cb web`
+- [x] Desktop scaffold (Dioxus)
+- [x] Tags, full-text substring search, MIT license
 
 ---
 
-## 🖥 v0.3 — Desktop App Full Feature
+## v0.2 — Polish & power user *(shipped core UX)*
 
-- [x] **Right information panel** — backlinks, tags, metadata, and outgoing links *(shipped in v0.2)*
-- [ ] **Native file watcher** — reload note list when files change on disk
-- [ ] **Graph view** — force-directed link graph between notes
-- [ ] **Split editor/preview** — side-by-side in desktop window
-- [ ] **Drag-and-drop attachments** — images stored in `~/.cobblestone/assets/`
-- [ ] **Native menu bar** — File / Edit / View menus
-- [ ] **System tray** — quick access to create note from anywhere
-- [ ] **Native notifications** — remind to open daily note
-- [ ] **Custom CSS themes** — drop `~/.cobblestone/theme.css` to restyle
+- [x] Shared Dioxus UI (desktop + web WASM)
+- [x] Nested file tree, CRUD, DnD, context menus
+- [x] Info panel: tags, wikilinks, backlinks
+- [x] CodeMirror source editing and optional Rust Live Preview beta
+- [x] Attachments / `![[image]]` paste
 
----
-
-## 🧱 Architecture Blueprint
-
-Product constraints for the desktop app (longer-term):
-
-| Area | Status |
-|------|--------|
-| **Local folder as workspace** | Planned — vault path still defaults to `~/.cobblestone` |
-| **File operations** | Done — CRUD for notes and folders in core + graphical UI |
-| **External change detection** | Planned |
-| **Markdown-first editor** | Done (v0) — `cobblestone-editor` + `EditorSession` TDD; tasks/quotes/HR; inline tokenizer; further polish in v0.4 |
-| **Connected notes** | Partial — wikilink parse, graph, backlinks panel; no autocomplete, broken-link hints, or preview navigation |
-| **Search and navigation** | Partial — full-text search; no quick switcher, filters, or bookmarks |
-| **Organization** | Partial — tags; no favorites, daily notes, templates, or global tag list |
-| **Knowledge graph** | Planned — local note graph exists; no global graph view yet |
-| **Portability** | Planned — import/export, HTML/PDF |
-| **Settings** | Planned — workspace path, shortcuts, theme, templates |
+- [x] Clickable `[[wikilinks]]` in Reading view
+- [ ] Backlink line highlights
+- [ ] Pinned notes; shell completions; TUI folder tree / mouse
 
 ---
 
-## 🌐 v0.4 — Web UI Enhancements
+## v0.3 — Desktop shell
 
-- [ ] **Polish `cobblestone-editor`** — wire idle-line emphasis live-hide via `inline_display_text`, better mobile caret; keep expanding `session` scenarios (see `session::scenarios`)
-- [x] **EditorSession undo/redo + block selection** — text + caret snapshots; cross-block delete/cut via `EditorCmd` *(shipped with TDD harness)*
-- [ ] **Search match highlights** — highlight matching lines in search results
-- [x] **Folder/category support** — subdirectories in storage *(shipped in v0.2)*
-- [ ] **PWA manifest** — installable as desktop app from browser
-- [ ] **Offline-first service worker**
-
-*(Wikilink navigation in preview moved to v0.2 — shared UI work. CodeMirror dropped in favour of `cobblestone-editor`.)*
+- [x] Right info panel
+- [ ] Native file watcher + UI reload
+- [ ] Graph view (force-directed)
+- [ ] Split editor/preview
+- [ ] Native menu / tray / notifications
+- [ ] Custom CSS themes
 
 ---
 
-## ✏️ Editor — longer term
+## v0.4 — Web
 
-Markdown near-WYSIWYG ships first in `cobblestone-editor`. After that mode is stable:
-
-- [ ] **Universal editor** — evolve the same crate beyond Markdown: plain text / code fences with language-aware highlighting, optional gutter/line numbers, shared keymap layer (without bringing back CodeMirror/Monaco)
-- [ ] **Vim key-bindings** — optional mode on top of the universal editor *(also listed under Ideas)*
-
----
-
-## 🔔 v0.5 — Notifications & Time-based Events
-
-- [ ] **Due dates** — add `due: 2026-06-01` to any note's front-matter; `cb` picks it up automatically
-- [ ] **Reminders** — `cb remind <slug> <time>` schedules a one-shot system notification (`notify-send` / `osascript` / Windows toast)
-- [ ] **Recurring events** — cron-like syntax in front-matter: `repeat: every Monday 09:00`
-- [ ] **Overdue warnings** — `cb` and TUI highlight notes with passed due dates in red
-- [ ] **Agenda view** — `cb agenda` shows all notes with upcoming due dates sorted by time
-- [ ] **Event daemon** — optional background process (`cb daemon`) that watches for due events and fires notifications without the app being open
-- [ ] **Calendar export** — `cb export --ical` generates an `.ics` file compatible with any calendar app
-- [ ] **Native desktop notifications** — OS-level alerts (macOS Notification Center, Linux libnotify, Windows toast)
-- [ ] **Web UI agenda widget** — sidebar panel listing upcoming deadlines
+- [ ] Editor polish on WASM (clipboard parity)
+- [ ] Search match highlights
+- [x] Nested folders
+- [ ] PWA / offline SW
 
 ---
 
-## 🔁 v0.6 — Sync & Export
+## v0.5–v0.7 — Time, sync, intelligence
 
-- [ ] **Git integration** — `cb sync` auto-commits and pushes
-- [ ] **Import from Markdown folder** — point at any directory
-- [ ] **Single note export** — `cb export <slug> --format html|pdf|md|txt`
-- [ ] **Full vault export** — export all notes and assets as a portable folder or `.zip` archive
-- [ ] **Website export** — generate a static HTML site from selected notes or the whole vault
-- [ ] **JSON export** — machine-readable backup with notes, tags, metadata, and links
-- [ ] **Encrypted notes** — per-note opt-in (age / GPG)
-- [ ] **Conflict resolution** — smart merge for concurrent edits
+- [ ] Due dates / agenda / daemon (overlaps Tasks)
+- [ ] Git sync, export, encrypted notes
+- [ ] Local LLM / semantic search / spaced repetition
 
 ---
 
-## 🤖 v0.7 — Intelligence (Local)
+## v0.8 — Plugin platform *(mostly shipped)*
 
-- [ ] **Local LLM** — summarize / expand notes via [ollama](https://ollama.ai)
-- [ ] **Smart tags** — auto-suggest tags based on content
-- [ ] **Semantic search** — vector embeddings (local model, no API keys)
-- [ ] **Spaced repetition** — flashcard mode for knowledge review
+First-party Rust plugins only (no foreign `main.js`). Copyleft upstream sources are never vendored.
+
+| Decision | Choice |
+|----------|--------|
+| API | `cobblestone-plugin-api` + `compat` |
+| Id/path map | `cobblestone-plugin-bridge` |
+| Load v0 | Static builtins via `plugin-host` |
+| Dynamic `.dylib` | Later milestone + license gate |
+
+Shipped:
+
+- [x] plugin-api / bridge / host
+- [x] Plugins: `periodic-notes`, `tasks`, `quick-capture`, `dynamic-templates`, `omni-search`
+- [x] CLI: `cb plugin`, `today`, `omni`, `project`
+- [x] Desktop: ⌘P palette, Reading post-processors, projects modal, editor modes ⌘E
 
 ---
 
-## 📦 Distribution
+## Per-crate roadmap *(reconciled)*
 
-### Shipped
+### `cobblestone-core`
 
-- [x] **GitHub Actions release pipeline** — tag `v*` builds `.dmg` (macOS Apple Silicon), `.deb` / `.AppImage` (Linux), `.msi` / `.exe` (Windows); draft [GitHub Releases](https://github.com/gribanoid/cobblestone/releases)
-- [x] **Pre-built desktop binaries** — macOS arm64, Linux x86_64, Windows x86_64 (unsigned)
+**Shipped:** nested Store, attachments, tags/wikilinks/`note_graph`, `ProjectsConfig` + `CB_DIR` / `projects.toml`.
 
-### Next up
+**Next:**
 
-- [ ] Homebrew formula (`brew install cobblestone`)
-- [ ] **macOS code signing & notarization** — Apple Developer ID so Gatekeeper stops blocking downloads (see below)
-- [ ] AUR package (Arch Linux)
-- [ ] Flatpak (Linux)
-- [ ] `cargo-binstall` support
+1. Vault file-watcher / change events
+2. Incremental search index hooks (invalidate via watcher)
+3. Wikilink harden: `[[Note\|alias]]`, `#heading`, resolve by title
+4. Rewrite inbound links on rename/move
+5. Soft-delete / trash
+6. Shared backup/restore API (lift from CLI)
 
-### macOS: damaged and can't be opened
+### `cb` (CLI)
 
-Release builds are **unsigned** (no Apple Developer Program yet). macOS Gatekeeper blocks them and shows a misleading *"damaged"* message — the app is fine.
+**Shipped:** ls/new/show/edit/rm/search, TUI, web, backup/restore, plugin + project commands.
 
-**Workaround** (after installing from `.dmg`):
+**Next:**
+
+1. Folder CLI parity (`mkdir` / `mv` / tree)
+2. Attachment CLI
+3. TUI: folder tree + Omni/backend search
+4. `plugin run` open `$EDITOR` like `today`
+5. Shell completions; `--project` flag
+6. Project-aware backup defaults
+
+### `cobblestone-editor`
+
+**Shipped:** block Live Preview, session TDD, embeds, desktop paste.
+
+**Next:**
+
+1. Source ↔ LP parity (IME, selection)
+2. Navigation hooks for `[[wikilinks]]`
+3. Tables / callouts / front matter (incremental)
+4. WASM clipboard path
+5. Optional LP post-processors
+
+### `cobblestone-ui`
+
+**Shipped:** tree/CRUD/DnD, modes, ⌘P, projects, attachments, desktop host.
+
+**Next:**
+
+1. Graph view and reload on filesystem changes
+2. Add built-in actions and keyboard navigation to the command palette
+3. Open projects with the OS folder picker
+4. Show plugin availability in the web interface
+
+### `cobblestone-desktop`
+
+**Shipped:** thin launcher → `launch_desktop` + in-process host.
+
+**Next:** watcher shell, menu/tray, window state, deep links to running app — keep UI in `cobblestone-ui`.
+
+### `cobblestone-plugin-api`
+
+**Next:** settings-tab API, editor selection and cursor on `App`, and vault events.
+
+### `cobblestone-plugin-bridge`
+
+**Next:** one-shot import of upstream `data.json` (read-only `.obsidian`); keep all upstream ids only here.
+
+### `cobblestone-plugin-host`
+
+**Next:** enable or disable plugins from desktop settings and invalidate cached metadata.
+
+### Plugins
+
+| Id | Next priorities |
+|----|-----------------|
+| `tasks` | [x] `tasks:toggle`; click in UI; recurrence on complete; query parity; index cache |
+| `quick-capture` | `{{VALUE}}` prompt; SELECTION/CLIPBOARD; Multi menu; settings UI |
+| `periodic-notes` | settings tab; weekly/monthly next/prev |
+| `dynamic-templates` | picker; insert at caret + cursor marker in editor |
+| `omni-search` | [x] desktop sidebar; persistent/incremental index; ⌘O |
+
+---
+
+## Active implementation queue
+
+1. [x] Omni search in desktop sidebar (when plugin host present)
+2. [x] `tasks:toggle` command (palette)
+3. [x] Clickable wikilinks in Reading view
+4. [x] Rust plugin host bridges: prompt / editor insert / notices / tasks panel
+5. Core watcher API (foundation for UI reload)
+
+---
+
+## Distribution
+
+- [x] CI release binaries (unsigned)
+- [ ] Homebrew, notarization, AUR, Flatpak
+
+### macOS Gatekeeper
 
 ```bash
 xattr -cr /Applications/Cobblestone.app
 ```
 
-Or: right-click the app → **Open** → **Open** (first launch only).
-
-**Permanent fix (planned):** sign and notarize the app in CI with an Apple Developer certificate.
-
 ---
 
-## 💡 Ideas Backlog
+## Ideas backlog
 
-- Mobile companion app (Dioxus mobile target — iOS/Android)
-- Browser extension to clip web pages as notes
-- CRDT-based local sync (Automerge)
-- Vim key-bindings mode (via universal `cobblestone-editor`)
-- YAML front-matter support (`---` header parsing)
-- Note version history (per-note git blame)
+Mobile, browser clipper, CRDT sync, Vim bindings, YAML front-matter, licensed dynamic plugins.
 
 ---
 

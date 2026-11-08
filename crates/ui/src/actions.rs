@@ -4,6 +4,9 @@ use std::collections::HashSet;
 
 use dioxus::prelude::*;
 
+#[cfg(feature = "desktop")]
+use cobblestone_plugin_api::WorkspaceApi;
+
 use crate::backend::SharedBackend;
 use crate::models::NoteGraph;
 use crate::models::SearchHit;
@@ -19,6 +22,9 @@ use crate::util::{
 };
 
 pub async fn reload_tree(mut ctx: AppCtx, backend: SharedBackend) {
+    if let Ok(label) = backend.vault_label().await {
+        ctx.project_label.set(label);
+    }
     match backend.list_tree().await {
         Ok(tree) => {
             let notes = flatten_tree(&tree);
@@ -32,7 +38,11 @@ pub async fn reload_tree(mut ctx: AppCtx, backend: SharedBackend) {
     }
 }
 
-pub async fn run_search(mut ctx: AppCtx, backend: SharedBackend) {
+pub async fn run_search(
+    mut ctx: AppCtx,
+    backend: SharedBackend,
+    #[cfg(feature = "desktop")] host: Option<cobblestone_plugin_host::SharedPluginHost>,
+) {
     let seq = *ctx.search_gen.peek();
     let q = ctx.search_query.peek().trim().to_string();
     if q.is_empty() {
@@ -42,7 +52,30 @@ pub async fn run_search(mut ctx: AppCtx, backend: SharedBackend) {
         }
         return;
     }
-    match backend.search_notes(&q).await {
+
+    #[cfg(feature = "desktop")]
+    let notes_result = {
+        let ranked = host.as_ref().and_then(|host| {
+            let host = host.lock().ok()?;
+            if !host.is_enabled("omni-search") {
+                return None;
+            }
+            cobblestone_plugin_omnisearch::search_vault(&host.app, &q, 50).ok()
+        });
+        if let Some(hits) = ranked {
+            let known = ctx.notes.peek();
+            Ok(hits
+                .into_iter()
+                .map(|hit| note_info_from_omni(&known, &hit.path, &hit.snippet))
+                .collect())
+        } else {
+            backend.search_notes(&q).await
+        }
+    };
+    #[cfg(not(feature = "desktop"))]
+    let notes_result = backend.search_notes(&q).await;
+
+    match notes_result {
         Ok(notes) => {
             if seq != *ctx.search_gen.peek() {
                 return;
@@ -59,6 +92,32 @@ pub async fn run_search(mut ctx: AppCtx, backend: SharedBackend) {
                 ctx.show_error(e);
             }
         }
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn note_info_from_omni(
+    known: &[crate::models::NoteInfo],
+    path: &str,
+    snippet: &str,
+) -> crate::models::NoteInfo {
+    let slug = path.strip_suffix(".md").unwrap_or(path).to_owned();
+    if let Some(n) = known.iter().find(|n| n.slug == slug) {
+        let mut n = n.clone();
+        if !snippet.is_empty() {
+            n.preview = snippet.to_string();
+        }
+        return n;
+    }
+    let title = slug.rsplit('/').next().unwrap_or(&slug).to_string();
+    crate::models::NoteInfo {
+        slug,
+        title,
+        created: String::new(),
+        modified: String::new(),
+        size: 0,
+        preview: snippet.to_string(),
+        tags: Vec::new(),
     }
 }
 
@@ -81,7 +140,9 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
     let Some(slug_at_start) = ctx.active_slug.peek().clone() else {
         return true;
     };
-    let title = ctx.active_title.peek().trim().to_string();
+    let revision = *ctx.dirty_gen.peek();
+    let draft_title = ctx.active_title.peek().clone();
+    let title = draft_title.trim().to_string();
     if title.is_empty() {
         ctx.show_error("Note title cannot be empty");
         return false;
@@ -95,7 +156,10 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
             Ok(new_slug) => {
                 if ctx.active_slug.peek().as_deref() == Some(slug_at_start.as_str()) {
                     ctx.active_slug.set(Some(new_slug.clone()));
-                    ctx.active_title.set(title.clone());
+                    ctx.persisted_title.set(title.clone());
+                    if *ctx.active_title.peek() == draft_title {
+                        ctx.active_title.set(title.clone());
+                    }
                 }
                 slug = new_slug;
             }
@@ -112,13 +176,14 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
     {
         Ok(()) => {
             if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
-                ctx.active_content.set(content);
                 ctx.persisted_title.set(title);
-                ctx.is_dirty.set(false);
+                if *ctx.dirty_gen.peek() == revision {
+                    ctx.is_dirty.set(false);
+                }
             }
             reload_tree(ctx, backend.clone()).await;
             refresh_graph(ctx, backend, &slug).await;
-            true
+            !*ctx.is_dirty.peek()
         }
         Err(e) => {
             ctx.show_error(e);
@@ -163,11 +228,213 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
             ctx.active_content.set(strip_leading_heading(&note.content));
             ctx.is_dirty.set(false);
             ctx.graph.set(None);
+            ctx.editor_insert.set(None);
+            ctx.editor_mode
+                .set(ctx.editor_preferences.peek().editing_mode());
+            ctx.note_menu_open.set(false);
             refresh_graph(ctx, backend, &slug).await;
         }
         Err(e) => ctx.show_error(e),
     }
     ctx.busy.set(false);
+}
+
+pub async fn switch_vault(mut ctx: AppCtx, backend: SharedBackend, path: String) {
+    if *ctx.busy.peek() {
+        return;
+    }
+    ctx.busy.set(true);
+    if !flush_save(ctx, backend.clone()).await {
+        ctx.busy.set(false);
+        return;
+    }
+    match backend.switch_vault(&path).await {
+        Ok(()) => {
+            clear_editor(ctx);
+            ctx.search_query.set(String::new());
+            ctx.search_results.set(None);
+            *ctx.search_gen.write() += 1;
+            ctx.expanded.write().clear();
+            ctx.tasks_panel.set(false);
+            ctx.modal.set(ModalState::None);
+            reload_tree(ctx, backend).await;
+        }
+        Err(e) => ctx.show_error(e),
+    }
+    ctx.busy.set(false);
+}
+
+pub fn toggle_reading(mut ctx: AppCtx) {
+    if ctx.active_slug.peek().is_none() {
+        return;
+    }
+    let mode = if ctx.editor_mode.peek().is_editing() {
+        crate::state::EditorMode::Reading
+    } else {
+        ctx.editor_preferences.peek().editing_mode()
+    };
+    ctx.editor_mode.set(mode);
+    ctx.note_menu_open.set(false);
+}
+
+/// Run a plugin command on the desktop host.
+#[cfg(feature = "desktop")]
+fn command_needs_prompt(
+    host: &cobblestone_plugin_host::PluginHost,
+    id: &str,
+) -> Option<(String, String)> {
+    if let Some(rest) = id.strip_prefix("quick-capture:choice-")
+        && let Ok(idx) = rest.parse::<usize>()
+        && cobblestone_plugin_quick_capture::QuickCapturePlugin::choice_needs_prompt(&host.app, idx)
+    {
+        return Some(("Capture value".into(), String::new()));
+    }
+    if id == "quick-capture:run"
+        && cobblestone_plugin_quick_capture::QuickCapturePlugin::choice_needs_prompt(&host.app, 0)
+    {
+        return Some(("Capture value".into(), String::new()));
+    }
+    if id == "dynamic-templates:new" {
+        return Some(("Note title".into(), chrono_lite_stamp()));
+    }
+    None
+}
+
+#[cfg(feature = "desktop")]
+fn chrono_lite_stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("Untitled-{secs}")
+}
+
+#[cfg(feature = "desktop")]
+fn read_clipboard_text() -> String {
+    arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut c| c.get_text().ok())
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "desktop")]
+pub async fn run_plugin_command(
+    mut ctx: AppCtx,
+    backend: SharedBackend,
+    host: Option<cobblestone_plugin_host::SharedPluginHost>,
+    id: String,
+) {
+    let Some(host) = host else {
+        ctx.show_error("Plugin host not available");
+        return;
+    };
+
+    // Pre-prompt for commands that need a value (avoids blocking the UI thread).
+    let needs = host.lock().ok().and_then(|h| command_needs_prompt(&h, &id));
+    if let Some((title, default)) = needs {
+        ctx.modal.set(ModalState::PromptValue {
+            title,
+            default,
+            pending_command: id,
+        });
+        return;
+    }
+
+    execute_plugin_command(ctx, backend, host, id, None).await;
+}
+
+#[cfg(feature = "desktop")]
+pub async fn confirm_plugin_prompt(
+    mut ctx: AppCtx,
+    backend: SharedBackend,
+    host: Option<cobblestone_plugin_host::SharedPluginHost>,
+    command: String,
+    value: String,
+) {
+    let Some(host) = host else {
+        ctx.show_error("Plugin host not available");
+        return;
+    };
+    ctx.modal.set(ModalState::None);
+    execute_plugin_command(ctx, backend, host, command, Some(value)).await;
+}
+
+#[cfg(feature = "desktop")]
+async fn execute_plugin_command(
+    mut ctx: AppCtx,
+    backend: SharedBackend,
+    host: cobblestone_plugin_host::SharedPluginHost,
+    id: String,
+    prompt_value: Option<String>,
+) {
+    ctx.modal.set(ModalState::None);
+    if !flush_save(ctx, backend.clone()).await {
+        return;
+    }
+    let active = ctx.active_slug.peek().clone();
+    let revision = *ctx.dirty_gen.peek();
+    let result = host.lock().map_err(|e| e.to_string()).map(|host| {
+        let path = active.as_ref().map(|slug| format!("{slug}.md"));
+        host.workspace.set_active_file_path(path);
+        host.set_editor_context(String::new(), read_clipboard_text());
+        host.set_prompt_value(prompt_value);
+
+        let result = host.execute_command(&id);
+        host.set_prompt_value(None);
+        let opens = host.workspace.take_open_requests();
+        let inserts = host.take_inserts();
+        let notices = host.take_notices();
+        let ui = host.take_ui_actions();
+        (result, opens, inserts, notices, ui)
+    });
+
+    match result {
+        Ok((result, opens, inserts, notices, ui)) => {
+            if let Err(err) = result {
+                ctx.show_error(err.to_string());
+            }
+            for msg in notices {
+                ctx.show_notice(msg);
+            }
+            if !inserts.is_empty() && opens.is_empty() {
+                ctx.editor_insert.set(Some(inserts.join("\n")));
+            }
+            for action in ui {
+                match action {
+                    cobblestone_plugin_host::HostUiAction::FocusSearch => {
+                        let mut g = ctx.focus_search_gen.write();
+                        *g += 1;
+                    }
+                    cobblestone_plugin_host::HostUiAction::ShowTasksPanel => {
+                        ctx.panel_open.set(true);
+                        ctx.tasks_panel.set(true);
+                    }
+                }
+            }
+            if opens.is_empty() {
+                if inserts.is_empty()
+                    && let Some(slug) = active
+                    && let Ok(note) = backend.get_note(&slug).await
+                    && *ctx.dirty_gen.peek() == revision
+                {
+                    let body = strip_leading_heading(&note.content);
+                    if *ctx.active_content.peek() != body {
+                        ctx.active_content.set(body);
+                        *ctx.editor_revision.write() += 1;
+                    }
+                    refresh_graph(ctx, backend.clone(), &slug).await;
+                }
+            } else {
+                for path in opens {
+                    let slug = path.strip_suffix(".md").unwrap_or(&path).to_owned();
+                    open_note(ctx, backend.clone(), slug).await;
+                }
+            }
+            reload_tree(ctx, backend).await;
+        }
+        Err(e) => ctx.show_error(e),
+    }
 }
 
 pub async fn create_note(
@@ -423,6 +690,7 @@ pub fn clear_editor(mut ctx: AppCtx) {
     ctx.persisted_title.set(String::new());
     ctx.graph.set(None);
     ctx.is_dirty.set(false);
+    ctx.editor_insert.set(None);
 }
 
 /// Where an attached file goes.
@@ -434,7 +702,7 @@ pub enum AttachTarget {
     Folder(String),
 }
 
-/// Save an image (Obsidian-style). Empty `filename` → `Pasted image <stamp>.png`.
+/// Save an image (vault-style). Empty `filename` → `Pasted image <stamp>.png`.
 /// For [`AttachTarget::ActiveNote`] the editor edit triggers autosave.
 pub async fn attach_image(
     mut ctx: AppCtx,
@@ -443,15 +711,18 @@ pub async fn attach_image(
     filename: String,
     bytes: Vec<u8>,
 ) {
-    let (folder, insert) = match target {
+    let (folder, note) = match target {
         AttachTarget::ActiveNote => {
             let Some(slug) = ctx.active_slug.peek().clone() else {
                 ctx.show_error("Open a note to attach an image");
                 return;
             };
-            (slug.rsplit_once('/').map(|(dir, _)| dir.to_string()), true)
+            (
+                slug.rsplit_once('/').map(|(dir, _)| dir.to_string()),
+                Some(slug),
+            )
         }
-        AttachTarget::Folder(f) => ((!f.is_empty()).then_some(f), false),
+        AttachTarget::Folder(f) => ((!f.is_empty()).then_some(f), None),
     };
     match backend
         .save_attachment(folder.as_deref(), &filename, &bytes)
@@ -459,7 +730,9 @@ pub async fn attach_image(
     {
         Ok(rel) => {
             let name = rel.rsplit('/').next().unwrap_or(&rel);
-            if insert {
+            if let Some(slug) = note
+                && ctx.active_slug.peek().as_deref() == Some(slug.as_str())
+            {
                 ctx.editor_insert.set(Some(format!("![[{name}]]")));
             }
             if let Some(f) = folder {

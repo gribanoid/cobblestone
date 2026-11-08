@@ -3,11 +3,11 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::actions::{attach_image, AttachTarget};
+use crate::actions::{AttachTarget, attach_image};
 use crate::backend::SharedBackend;
 use crate::components::{ContextMenu, DragPreview, EditorArea, Modals, RightPanel, Sidebar};
 use crate::ops::{AppOp, spawn_ops};
-use crate::state::AppCtx;
+use crate::state::{AppCtx, EditorPreferences};
 use crate::util::decode_base64;
 
 const CSS: Asset = asset!("/assets/main.css");
@@ -26,6 +26,16 @@ struct PasteImageReply {
     embed: String,
 }
 
+#[derive(Deserialize)]
+struct WikilinkNavReq {
+    slug: String,
+}
+
+#[derive(Serialize)]
+struct WikilinkNavAck {
+    ok: bool,
+}
+
 /// Root component — follows the Dioxus 0.7 app pattern:
 /// signals + context providers + coroutine for serialized side effects.
 #[component]
@@ -35,7 +45,7 @@ pub fn App() -> Element {
     let ops = spawn_ops(ctx, backend.clone());
     use_context_provider(|| ops);
 
-    // Obsidian-style image paste / drag-drop: save to attachments/, insert `![[…]]`.
+    // vault-style image paste / drag-drop: save to attachments/, insert `![[…]]`.
     use_hook(move || {
         let backend = backend.clone();
         let mut ctx = ctx;
@@ -67,6 +77,23 @@ pub fn App() -> Element {
         });
     });
 
+    // Reading-view [[wikilink]] clicks → open note.
+    use_hook(move || {
+        let ops = ops;
+        spawn(async move {
+            let mut eval = document::eval(include_str!("../assets/wikilink_nav.js"));
+            loop {
+                let Ok(req) = eval.recv::<WikilinkNavReq>().await else {
+                    break;
+                };
+                if !req.slug.is_empty() {
+                    ops.send(AppOp::OpenNote(req.slug));
+                }
+                let _ = eval.send(WikilinkNavAck { ok: true });
+            }
+        });
+    });
+
     // Initial vault load
     use_effect(move || {
         ops.send(AppOp::ReloadTree);
@@ -82,8 +109,54 @@ pub fn App() -> Element {
         }
     });
 
+    // Auto-dismiss notice toast
+    use_effect(move || {
+        if ctx.notice.read().is_some() {
+            spawn(async move {
+                crate::timeutil::delay_ms(3500).await;
+                ctx.notice.set(None);
+            });
+        }
+    });
+
     let theme = ctx.theme;
     let mut error = ctx.error;
+    let mut notice = ctx.notice;
+
+    // Restore desktop theme from webview localStorage once, then keep html/body synced.
+    use_hook(move || {
+        let mut theme_sig = theme;
+        spawn(async move {
+            let mut eval = document::eval(
+                r#"
+                let t = 'dark';
+                try { t = localStorage.getItem('cb-theme') || 'dark'; } catch (_) {}
+                document.documentElement.setAttribute('data-theme', t);
+                if (document.body) document.body.setAttribute('data-theme', t);
+                dioxus.send(t);
+                "#,
+            );
+            if let Ok(saved) = eval.recv::<String>().await {
+                let parsed = crate::theme::Theme::parse(&saved);
+                if parsed != *theme_sig.peek() {
+                    theme_sig.set(parsed);
+                }
+            }
+        });
+    });
+
+    use_hook(move || {
+        spawn(async move {
+            let stored = document::eval(
+                r#"try { return JSON.parse(localStorage.getItem('cb-editor')); } catch (_) { return null; }"#,
+            )
+            .join::<Option<EditorPreferences>>()
+            .await;
+            if let Ok(Some(preferences)) = stored {
+                preferences.apply(ctx);
+            }
+        });
+    });
 
     use_effect(move || {
         set_document_theme(theme.read().as_str());
@@ -98,12 +171,23 @@ pub fn App() -> Element {
             tabindex: "0",
             onkeydown: move |e| {
                 if e.data().key() == Key::Escape {
+                    ctx.note_menu_open.set(false);
                     ctx.dismiss_overlays();
                 }
                 let m = e.modifiers();
                 if (m.meta() || m.ctrl()) && e.code() == Code::KeyS {
                     e.prevent_default();
                     ops.send(AppOp::Save);
+                }
+                // ⌘E / Ctrl+E — toggle Reading ↔ last editing mode.
+                if (m.meta() || m.ctrl()) && e.code() == Code::KeyE {
+                    e.prevent_default();
+                    ops.send(AppOp::ToggleReading);
+                }
+                // ⌘P — plugin command palette.
+                if (m.meta() || m.ctrl()) && e.code() == Code::KeyP {
+                    e.prevent_default();
+                    ctx.modal.set(crate::state::ModalState::CommandPalette);
                 }
             },
             Sidebar {}
@@ -114,6 +198,14 @@ pub fn App() -> Element {
             Modals {}
             ContextMenu {}
             DragPreview {}
+            if let Some(msg) = notice.read().clone() {
+                div {
+                    class: "notice-toast",
+                    id: "notice-toast",
+                    onclick: move |_| notice.set(None),
+                    "{msg}"
+                }
+            }
             if let Some(msg) = error.read().clone() {
                 div {
                     class: "error-toast",
@@ -127,17 +219,19 @@ pub fn App() -> Element {
 }
 
 fn set_document_theme(theme: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(el) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.document_element())
-        {
-            let _ = el.set_attribute("data-theme", theme);
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = theme;
-    }
+    // Keep html/body in sync so inherited `color` / `background` match `.app`.
+    let theme = theme.to_string();
+    spawn(async move {
+        let mut eval = document::eval(
+            r#"
+            const t = await dioxus.recv();
+            document.documentElement.setAttribute('data-theme', t);
+            if (document.body) document.body.setAttribute('data-theme', t);
+            try { localStorage.setItem('cb-theme', t); } catch (_) {}
+            true
+            "#,
+        );
+        let _ = eval.send(theme);
+        let _ = eval.recv::<bool>().await;
+    });
 }

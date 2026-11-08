@@ -47,6 +47,29 @@ pub trait VaultBackend: Send + Sync {
 
     /// Delete an attachment by vault-relative path.
     async fn delete_file(&self, path: &str) -> Result<(), String>;
+
+    /// Display name of the current vault / project.
+    async fn vault_label(&self) -> Result<String, String> {
+        Ok("Cobblestone".into())
+    }
+
+    /// Absolute path of the current vault (desktop).
+    async fn vault_path(&self) -> Result<String, String> {
+        Err("Vault path not available".into())
+    }
+
+    /// Switch the active vault root (desktop). Reloads tree afterward via ops.
+    async fn switch_vault(&self, _path: &str) -> Result<(), String> {
+        Err("Switching projects is only available in the desktop app".into())
+    }
+
+    async fn list_projects(&self) -> Result<Vec<(String, String)>, String> {
+        Ok(Vec::new())
+    }
+
+    async fn add_project(&self, _name: &str, _path: &str) -> Result<(), String> {
+        Err("Adding projects is only available in the desktop app".into())
+    }
 }
 
 pub type SharedBackend = Arc<dyn VaultBackend>;

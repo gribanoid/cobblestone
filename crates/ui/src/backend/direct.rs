@@ -1,26 +1,46 @@
 // SPDX-License-Identifier: MIT
 
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use cobblestone_core::Store;
+use cobblestone_core::{ProjectsConfig, Store};
+use cobblestone_plugin_host::{SharedPluginHost, bootstrap_builtins_shared};
 
 use super::VaultBackend;
 use crate::models::{NoteContent, NoteGraph, NoteInfo, VaultNode};
 
 pub struct DirectStore {
-    store: Arc<Store>,
+    store: Mutex<Arc<Mutex<Store>>>,
+    host: Option<SharedPluginHost>,
 }
 
 impl DirectStore {
     pub fn new(store: Store) -> Self {
         Self {
-            store: Arc::new(store),
+            store: Mutex::new(Arc::new(Mutex::new(store))),
+            host: None,
         }
     }
 
-    pub fn shared(store: Store) -> super::SharedBackend {
-        Arc::new(Self::new(store))
+    pub fn shared_with_plugins(
+        store: Store,
+    ) -> Result<(super::SharedBackend, SharedPluginHost), String> {
+        let store = Arc::new(Mutex::new(store));
+        let host =
+            bootstrap_builtins_shared(Arc::clone(&store), None).map_err(|e| e.to_string())?;
+        let host = Arc::new(Mutex::new(host));
+        let backend = Arc::new(Self {
+            store: Mutex::new(store),
+            host: Some(Arc::clone(&host)),
+        });
+        Ok((backend, host))
+    }
+
+    fn with_store<R>(&self, f: impl FnOnce(&Store) -> Result<R, String>) -> Result<R, String> {
+        let current = self.store.lock().map_err(|e| e.to_string())?;
+        let store = current.lock().map_err(|e| e.to_string())?;
+        f(&store)
     }
 }
 
@@ -28,93 +48,89 @@ impl DirectStore {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl VaultBackend for DirectStore {
     async fn list_tree(&self) -> Result<Vec<VaultNode>, String> {
-        self.store
-            .list_tree()
-            .map(|t| t.into_iter().map(VaultNode::from).collect())
-            .map_err(|e| e.to_string())
+        self.with_store(|s| {
+            s.list_tree()
+                .map(|t| t.into_iter().map(VaultNode::from).collect())
+                .map_err(|e| e.to_string())
+        })
     }
 
     async fn get_note(&self, slug: &str) -> Result<NoteContent, String> {
-        let content = self.store.read(slug).map_err(|e| e.to_string())?;
-        let title = content
-            .lines()
-            .find(|l| l.starts_with("# "))
-            .map(|l| l.trim_start_matches("# ").to_string())
-            .unwrap_or_else(|| slug.to_string());
-        Ok(NoteContent {
-            slug: slug.to_string(),
-            title,
-            content,
+        self.with_store(|store| {
+            let content = store.read(slug).map_err(|e| e.to_string())?;
+            let title = content
+                .lines()
+                .find(|l| l.starts_with("# "))
+                .map(|l| l.trim_start_matches("# ").to_string())
+                .unwrap_or_else(|| slug.to_string());
+            Ok(NoteContent {
+                slug: slug.to_string(),
+                title,
+                content,
+            })
         })
     }
 
     async fn save_note(&self, slug: &str, content: &str) -> Result<(), String> {
-        self.store.write(slug, content).map_err(|e| e.to_string())
+        self.with_store(|s| s.write(slug, content).map_err(|e| e.to_string()))
     }
 
     async fn create_note(&self, title: &str, folder: Option<&str>) -> Result<String, String> {
-        let slug = self
-            .store
-            .note_id_from_title(folder, title)
-            .map_err(|e| e.to_string())?;
-        if self.store.exists(&slug) {
-            return Err(format!("Note '{slug}' already exists"));
-        }
-        let content = format!("# {title}\n\n");
-        self.store
-            .write(&slug, &content)
-            .map_err(|e| e.to_string())?;
-        Ok(slug)
+        self.with_store(|store| {
+            let slug = store
+                .note_id_from_title(folder, title)
+                .map_err(|e| e.to_string())?;
+            if store.exists(&slug) {
+                return Err(format!("Note '{slug}' already exists"));
+            }
+            let content = format!("# {title}\n\n");
+            store.write(&slug, &content).map_err(|e| e.to_string())?;
+            Ok(slug)
+        })
     }
 
     async fn create_folder(&self, path: &str) -> Result<(), String> {
-        self.store.create_folder(path).map_err(|e| e.to_string())
+        self.with_store(|s| s.create_folder(path).map_err(|e| e.to_string()))
     }
 
     async fn move_note(&self, slug: &str, folder: Option<&str>) -> Result<String, String> {
-        self.store
-            .move_note(slug, folder)
-            .map_err(|e| e.to_string())
+        self.with_store(|s| s.move_note(slug, folder).map_err(|e| e.to_string()))
     }
 
     async fn move_folder(&self, path: &str, dest_parent: Option<&str>) -> Result<String, String> {
-        self.store
-            .move_folder(path, dest_parent)
-            .map_err(|e| e.to_string())
+        self.with_store(|s| s.move_folder(path, dest_parent).map_err(|e| e.to_string()))
     }
 
     async fn delete_note(&self, slug: &str) -> Result<(), String> {
-        self.store.delete(slug).map_err(|e| e.to_string())
+        self.with_store(|s| s.delete(slug).map_err(|e| e.to_string()))
     }
 
     async fn rename_note(&self, slug: &str, title: &str) -> Result<String, String> {
-        self.store
-            .rename_note(slug, title)
-            .map_err(|e| e.to_string())
+        self.with_store(|s| s.rename_note(slug, title).map_err(|e| e.to_string()))
     }
 
     async fn rename_folder(&self, path: &str, name: &str) -> Result<String, String> {
-        self.store
-            .rename_folder(path, name)
-            .map_err(|e| e.to_string())
+        self.with_store(|s| s.rename_folder(path, name).map_err(|e| e.to_string()))
     }
 
     async fn delete_folder(&self, path: &str) -> Result<(), String> {
-        self.store.delete_folder(path).map_err(|e| e.to_string())
+        self.with_store(|s| s.delete_folder(path).map_err(|e| e.to_string()))
     }
 
     async fn search_notes(&self, query: &str) -> Result<Vec<NoteInfo>, String> {
-        self.store
-            .search(query)
-            .map(|results| results.iter().map(|(n, _)| NoteInfo::from(n)).collect())
-            .map_err(|e| e.to_string())
+        self.with_store(|s| {
+            s.search(query)
+                .map(|results| results.iter().map(|(n, _)| NoteInfo::from(n)).collect())
+                .map_err(|e| e.to_string())
+        })
     }
 
     async fn note_graph(&self, slug: &str) -> Result<NoteGraph, String> {
-        self.store
-            .note_graph(slug)
-            .map(NoteGraph::from)
-            .map_err(|e| e.to_string())
+        self.with_store(|s| {
+            s.note_graph(slug)
+                .map(NoteGraph::from)
+                .map_err(|e| e.to_string())
+        })
     }
 
     async fn save_attachment(
@@ -123,25 +139,81 @@ impl VaultBackend for DirectStore {
         filename: &str,
         bytes: &[u8],
     ) -> Result<String, String> {
-        self.store
-            .save_attachment(folder, filename, bytes)
-            .map_err(|e| e.to_string())
+        self.with_store(|s| {
+            s.save_attachment(folder, filename, bytes)
+                .map_err(|e| e.to_string())
+        })
     }
 
     async fn attachment_src(&self, name: &str) -> Result<String, String> {
-        let bytes = self
-            .store
-            .read_attachment(name)
-            .map_err(|e| e.to_string())?;
+        let bytes = self.with_store(|s| s.read_attachment(name).map_err(|e| e.to_string()))?;
         let mime = mime_from_name(name);
-        Ok(format!(
-            "data:{mime};base64,{}",
-            base64_encode(&bytes)
-        ))
+        Ok(format!("data:{mime};base64,{}", base64_encode(&bytes)))
     }
 
     async fn delete_file(&self, path: &str) -> Result<(), String> {
-        self.store.delete_file(path).map_err(|e| e.to_string())
+        self.with_store(|s| s.delete_file(path).map_err(|e| e.to_string()))
+    }
+
+    async fn vault_label(&self) -> Result<String, String> {
+        self.with_store(|s| {
+            Ok(s.root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| s.root.display().to_string()))
+        })
+    }
+
+    async fn vault_path(&self) -> Result<String, String> {
+        self.with_store(|s| Ok(s.root.display().to_string()))
+    }
+
+    async fn switch_vault(&self, path: &str) -> Result<(), String> {
+        let path = Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+        let mut cfg = ProjectsConfig::load().map_err(|e| e.to_string())?;
+        let name = cfg
+            .projects
+            .iter()
+            .find(|project| Path::new(&project.path).canonicalize().ok().as_ref() == Some(&path))
+            .map(|project| project.name.clone())
+            .ok_or_else(|| format!("Project is not registered: {}", path.display()))?;
+        cfg.set_last_opened(&name);
+        let new_store = Store::with_root(path).map_err(|e| e.to_string())?;
+        let new_store = Arc::new(Mutex::new(new_store));
+        let new_host = self
+            .host
+            .as_ref()
+            .map(|_| bootstrap_builtins_shared(Arc::clone(&new_store), None))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let mut host = self
+            .host
+            .as_ref()
+            .map(|host| host.lock())
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let mut store = self.store.lock().map_err(|e| e.to_string())?;
+        cfg.save().map_err(|e| e.to_string())?;
+        *store = new_store;
+        if let (Some(current), Some(next)) = (&mut host, new_host) {
+            **current = next;
+        }
+        Ok(())
+    }
+
+    async fn list_projects(&self) -> Result<Vec<(String, String)>, String> {
+        let cfg = ProjectsConfig::load().map_err(|e| e.to_string())?;
+        Ok(cfg.projects.into_iter().map(|p| (p.name, p.path)).collect())
+    }
+
+    async fn add_project(&self, name: &str, path: &str) -> Result<(), String> {
+        if !Path::new(path).is_absolute() {
+            return Err("Enter an absolute folder path".into());
+        }
+        std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
+        let mut cfg = ProjectsConfig::load().map_err(|e| e.to_string())?;
+        cfg.add(name, path).map_err(|e| e.to_string())?;
+        cfg.save().map_err(|e| e.to_string())
     }
 }
 
