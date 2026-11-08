@@ -9,7 +9,7 @@ use crate::backend::SharedBackend;
 use crate::components::codemirror::{CodeMirrorEditor, use_codemirror};
 use crate::components::md_editor::MarkdownEditor;
 use crate::icons::{IconPanelRight, IconSunMoon};
-use crate::markdown::{embed_image_names, render_markdown_preview_with_links};
+use crate::markdown::{embed_image_names, render_note_body};
 use crate::models::NoteInfo;
 use crate::ops::{AppOp, Ops};
 use crate::state::{AppCtx, EditorMode};
@@ -88,16 +88,10 @@ pub fn EditorArea() -> Element {
     let note_key = format!("{slug}:{}", ctx.editor_revision.read());
     let preview_html = if mode == EditorMode::Reading {
         let body = content.read().clone();
-        let t = title.read().clone();
         let srcs = image_srcs.read().clone();
         let notes = ctx.notes.read().clone();
         let resolve = |target: &str| -> Option<String> { resolve_note_slug(&notes, target) };
-        let html = render_markdown_preview_with_links(
-            &body,
-            &t,
-            &|name| srcs.get(name).cloned(),
-            &resolve,
-        );
+        let html = render_note_body(&body, &|name| srcs.get(name).cloned(), &resolve);
         #[cfg(feature = "desktop")]
         let html = {
             use cobblestone_plugin_host::SharedPluginHost;

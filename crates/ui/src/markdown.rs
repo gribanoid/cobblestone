@@ -29,11 +29,19 @@ pub fn render_markdown_preview_with_links(
     resolve_wikilink: &dyn Fn(&str) -> Option<String>,
 ) -> String {
     let body = body_for_preview(content, title);
+    render_note_body(&body, image_src, resolve_wikilink)
+}
+
+pub(crate) fn render_note_body(
+    body: &str,
+    image_src: &dyn Fn(&str) -> Option<String>,
+    resolve_wikilink: &dyn Fn(&str) -> Option<String>,
+) -> String {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_WIKILINKS;
-    let mut parser = Parser::new_ext(&body, options).into_offset_iter();
+    let mut parser = Parser::new_ext(body, options).into_offset_iter();
     let events = std::iter::from_fn(|| {
         let (event, range) = parser.next()?;
         let raw = &body[range];
@@ -190,6 +198,13 @@ pub fn embed_image_names(content: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_preserves_the_first_body_heading() {
+        let html = render_note_body("# Section\n\n## Details\n", &|_| None, &|_| None);
+        assert!(html.contains("<h1>Section</h1>"));
+        assert!(html.contains("<h2>Details</h2>"));
+    }
 
     #[test]
     fn expands_wikilink_image() {

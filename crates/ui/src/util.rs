@@ -216,57 +216,68 @@ pub fn remap_path(path: &str, from: &str, to: &str) -> String {
 }
 
 pub fn strip_leading_heading(content: &str) -> String {
-    let normalized = content.trim_start_matches('\u{FEFF}');
-    let mut lines = normalized.split('\n');
-    let Some(first) = lines.next() else {
-        return String::new();
-    };
-    let first = first.trim_end_matches('\r');
-    if first.trim_start().starts_with('#') {
-        let rest: Vec<&str> = lines.collect();
-        let joined = rest.join("\n");
-        return joined.trim_start_matches('\n').to_string();
+    let content = content.trim_start_matches('\u{FEFF}');
+    let (first, rest) = content.split_once('\n').unwrap_or((content, ""));
+    if first
+        .strip_prefix("# ")
+        .is_some_and(|title| !title.trim().is_empty())
+    {
+        rest.strip_prefix("\r\n")
+            .or_else(|| rest.strip_prefix('\n'))
+            .unwrap_or(rest)
+            .to_owned()
+    } else {
+        content.to_owned()
     }
-    normalized.to_string()
 }
 
 pub fn body_for_preview(content: &str, title: &str) -> String {
-    let mut body = strip_leading_heading(content);
-    let t = title.trim().to_lowercase();
-    if t.is_empty() {
-        return body;
-    }
-    let lines: Vec<&str> = body.split('\n').collect();
-    let first = lines
-        .first()
-        .map(|l| l.trim_end_matches('\r').trim())
-        .unwrap_or("");
-    if let Some(heading) = first
-        .strip_prefix('#')
-        .map(|s| s.trim_start_matches('#').trim())
-        && (heading.eq_ignore_ascii_case(&t) || heading.to_lowercase() == t)
+    if content
+        .trim_start_matches('\u{FEFF}')
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("# "))
+        .is_some_and(|heading| heading.trim() == title.trim())
     {
-        body = lines[1..].join("\n").trim_start_matches('\n').to_string();
+        strip_leading_heading(content)
+    } else {
+        content.to_owned()
     }
-    body
 }
 
-pub fn content_with_title(content: &str, title: &str) -> String {
-    let t = title.trim();
-    if t.is_empty() {
-        return content.to_string();
-    }
-    let mut lines = content.lines();
-    if lines.next().is_some_and(|l| l.starts_with("# ")) {
-        let rest: Vec<&str> = lines.collect();
-        let rest = rest.join("\n");
-        if rest.is_empty() {
-            format!("# {t}")
-        } else {
-            format!("# {t}\n{rest}")
-        }
+/// Serialize the toolbar title and the separate body from the editor.
+pub fn content_with_title(body: &str, title: &str) -> String {
+    let title = title.trim();
+    if title.is_empty() {
+        body.to_owned()
     } else {
-        format!("# {t}\n\n{content}")
+        format!("# {title}\n\n{body}")
+    }
+}
+
+#[cfg(test)]
+mod note_content_tests {
+    use super::*;
+
+    #[test]
+    fn editing_preserves_body_headings() {
+        let markdown = "# Title\n\n# Section\n\nBody\n";
+        assert_eq!(
+            content_with_title(&strip_leading_heading(markdown), "Title"),
+            markdown
+        );
+        for body in [
+            "## Section\nBody\n",
+            "#hashtag\n",
+            "    # Code\n",
+            "\n\nBody\n",
+        ] {
+            assert_eq!(strip_leading_heading(body), body);
+            assert_eq!(
+                strip_leading_heading(&content_with_title(body, "Title")),
+                body
+            );
+        }
     }
 }
 

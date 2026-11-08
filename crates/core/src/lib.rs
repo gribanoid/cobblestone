@@ -567,14 +567,11 @@ fn is_created_stamp(line: &str) -> bool {
 }
 
 fn set_content_title(content: &str, title: &str) -> String {
-    let lines: Vec<&str> = content.lines().collect();
-    if lines.first().is_some_and(|l| l.starts_with("# ")) {
-        let rest = lines[1..].join("\n");
-        if rest.is_empty() {
-            format!("# {title}")
-        } else {
-            format!("# {title}\n{rest}")
-        }
+    if content.starts_with("# ") {
+        let line_end = content.find('\n').map_or(content.len(), |end| {
+            content[..end].trim_end_matches('\r').len()
+        });
+        format!("# {title}{}", &content[line_end..])
     } else {
         format!("# {title}\n\n{content}")
     }
@@ -1414,12 +1411,12 @@ mod tests {
     #[test]
     fn rename_note_updates_slug_and_title() {
         let (_dir, store) = temp_store();
-        store.write("hello", "# Hello\n\nBody").unwrap();
+        store.write("hello", "# Hello\r\n\r\nBody\r\n\r\n").unwrap();
         let new_id = store.rename_note("hello", "World").unwrap();
         assert_eq!(new_id, "World");
         assert!(!store.exists("hello"));
         let content = store.read("World").unwrap();
-        assert!(content.starts_with("# World"));
+        assert_eq!(content, "# World\r\n\r\nBody\r\n\r\n");
     }
 
     #[test]
