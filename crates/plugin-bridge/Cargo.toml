@@ -1,0 +1,12 @@
+[package]
+name        = "cobblestone-plugin-bridge"
+description = "Maps upstream plugin ids/paths onto Cobblestone plugin-api entities"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# no runtime deps — pure mapping tables
+
+[dev-dependencies]
+tempfile = "3"

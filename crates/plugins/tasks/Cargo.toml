@@ -1,0 +1,16 @@
+[package]
+name        = "cobblestone-plugin-tasks"
+description = "Task lists, due dates, and queries for Cobblestone"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono                 = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cobblestone-plugin-api = { path = "../../plugin-api" }
+regex                  = "1"
+serde                  = { version = "1", features = ["derive"] }
+serde_json             = "1"
+
+[dev-dependencies]
+tempfile = "3"

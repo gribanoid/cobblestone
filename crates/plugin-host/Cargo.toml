@@ -1,0 +1,21 @@
+[package]
+name        = "cobblestone-plugin-host"
+description = "Loads and runs Cobblestone first-party plugins against cobblestone-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cobblestone-core                    = { path = "../core" }
+cobblestone-plugin-api              = { path = "../plugin-api" }
+cobblestone-plugin-bridge           = { path = "../plugin-bridge" }
+cobblestone-plugin-omnisearch       = { path = "../plugins/omnisearch" }
+cobblestone-plugin-periodic-notes   = { path = "../plugins/periodic-notes" }
+cobblestone-plugin-quick-capture    = { path = "../plugins/quick-capture" }
+cobblestone-plugin-tasks            = { path = "../plugins/tasks" }
+cobblestone-plugin-templates-engine = { path = "../plugins/templates-engine" }
+serde_json                          = "1"
+thiserror                           = "2"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,12 @@
+[package]
+name        = "cobblestone-plugin-periodic-notes"
+description = "Daily, weekly, and monthly notes for Cobblestone"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono                 = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cobblestone-plugin-api = { path = "../../plugin-api" }
+serde                  = { version = "1", features = ["derive"] }
+serde_json             = "1"

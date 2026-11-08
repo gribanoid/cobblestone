@@ -76,10 +76,7 @@ jobs:
             librsvg2-dev
 
       - name: Unit / integration tests
-        run: |
-          cargo test -p cobblestone-core
-          cargo test -p cb
-          cargo test -p cobblestone-ui --features desktop
+        run: cargo test --workspace --locked
 
   doc:
     name: Docs

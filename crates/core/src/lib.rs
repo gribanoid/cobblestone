@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
 
+mod projects;
+
+pub use projects::{ProjectEntry, ProjectsConfig, resolve_vault_root};
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,9 +26,9 @@ impl Store {
         Ok(home.join("Documents").join("CobblestoneVault"))
     }
 
-    /// Initialise the default store at `~/Documents/CobblestoneVault`.
+    /// Initialise the store from `CB_DIR`, projects.toml, or the default vault.
     pub fn init() -> Result<Self> {
-        Self::with_root(Self::default_vault_root()?)
+        Self::with_root(resolve_vault_root()?)
     }
 
     /// Initialise a store at an arbitrary root (used in tests and desktop).
@@ -291,7 +295,7 @@ impl Store {
     /// Save raw bytes into `folder` (vault-relative; `None` / `""` = vault root),
     /// returning the vault-relative path. The file name is made unique across
     /// the whole vault so a bare `![[name]]` embed always resolves to it.
-    /// An empty `filename` gets the Obsidian default `Pasted image <stamp>.png`.
+    /// An empty `filename` gets the default `Pasted image <stamp>.png`.
     pub fn save_attachment(
         &self,
         folder: Option<&str>,
@@ -302,8 +306,7 @@ impl Store {
             Some(f) => self.root.join(normalize_folder_path(f)?),
             None => self.root.clone(),
         };
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("Cannot create {}", dir.display()))?;
+        fs::create_dir_all(&dir).with_context(|| format!("Cannot create {}", dir.display()))?;
         let safe = if filename.trim().is_empty() {
             pasted_image_filename("png")
         } else {
@@ -351,7 +354,7 @@ impl Store {
         Ok(out)
     }
 
-    /// Resolve an embed target to a file inside the vault, Obsidian-style:
+    /// Resolve an embed target to a file inside the vault, vault-style:
     /// a path with `/` is vault-relative; a bare name is looked up in the
     /// vault root, then `attachments/`, then anywhere (shortest path wins).
     pub fn attachment_path(&self, target: &str) -> Result<PathBuf> {
@@ -362,7 +365,8 @@ impl Store {
         validate_path_components(&target)?;
         let root = fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
         let inside = |p: PathBuf| -> Result<PathBuf> {
-            let canon = fs::canonicalize(&p).with_context(|| format!("Attachment not found: {target}"))?;
+            let canon =
+                fs::canonicalize(&p).with_context(|| format!("Attachment not found: {target}"))?;
             if !canon.starts_with(&root) {
                 bail!("Attachment path escaped the vault");
             }
@@ -371,7 +375,10 @@ impl Store {
         if target.contains('/') {
             return inside(self.root.join(&target));
         }
-        for candidate in [self.root.join(&target), self.attachments_dir().join(&target)] {
+        for candidate in [
+            self.root.join(&target),
+            self.attachments_dir().join(&target),
+        ] {
             if candidate.is_file() {
                 return inside(candidate);
             }
@@ -524,7 +531,7 @@ pub enum VaultNode {
         preview: String,
         tags: Vec<String>,
     },
-    /// Non-note file shown in the tree (images, PDFs — Obsidian attachments).
+    /// Non-note file shown in the tree (images, PDFs — attachments).
     File {
         name: String,
         /// Vault-relative path including the extension.
@@ -894,7 +901,7 @@ fn unique_attachment_path(
     bail!("Cannot allocate unique attachment name for '{filename}'");
 }
 
-/// Obsidian-style default name for a clipboard paste.
+/// vault-style default name for a clipboard paste.
 pub fn pasted_image_filename(ext: &str) -> String {
     let stamp = Local::now().format("%Y%m%d%H%M%S");
     let ext = ext.trim_start_matches('.').to_ascii_lowercase();
@@ -1319,7 +1326,9 @@ mod tests {
     fn attachments_listed_in_tree_and_deletable() {
         let (_dir, store) = temp_store();
         store.create_folder("research").unwrap();
-        let rel = store.save_attachment(Some("research"), "", b"png-bytes").unwrap();
+        let rel = store
+            .save_attachment(Some("research"), "", b"png-bytes")
+            .unwrap();
         assert!(rel.starts_with("research/Pasted image "));
         let tree = store.list_tree().unwrap();
         let files = tree

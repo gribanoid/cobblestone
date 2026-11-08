@@ -10,7 +10,11 @@ name = "cb"
 path = "src/main.rs"
 
 [dependencies]
-cobblestone-core = { path = "../core" }
+cobblestone-core         = { path = "../core" }
+cobblestone-plugin-host  = { path = "../plugin-host" }
+cobblestone-plugin-api   = { path = "../plugin-api" }
+cobblestone-plugin-omnisearch = { path = "../plugins/omnisearch" }
+cobblestone-plugin-periodic-notes = { path = "../plugins/periodic-notes" }
 anyhow     = "1"
 chrono     = { version = "0.4", features = ["serde"] }
 clap       = { version = "4",   features = ["derive"] }

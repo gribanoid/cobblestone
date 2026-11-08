@@ -12,6 +12,10 @@ crates/ui/dist-web/
 *.swp
 *.swo
 .DS_Store
+# Keep shared project skills; ignore other Cursor local state if present.
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**/
 
 # ── Cargo mutants ─────────────────────────────────────────────────────────────
 **/mutants.out*/
@@ -20,3 +24,9 @@ crates/ui/dist-web/
 .env
 .env.*
 !.env.example
+
+# ── Local study clones & personal vault fixtures ─────────────────────────────
+# MIT reference sources for local study only — never commit.
+third_party/
+# Personal vault copies — never commit.
+fixtures/personal-vault/

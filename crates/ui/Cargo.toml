@@ -19,7 +19,18 @@ required-features = ["web"]
 [features]
 default  = []
 web      = ["dioxus/web", "dep:gloo-net", "dep:gloo-timers"]
-desktop  = ["dioxus/desktop", "dep:cobblestone-core", "dep:tokio", "dep:arboard", "cobblestone-editor/desktop"]
+desktop  = [
+    "dioxus/desktop",
+    "dep:cobblestone-core",
+    "dep:cobblestone-plugin-host",
+    "dep:cobblestone-plugin-api",
+    "dep:cobblestone-plugin-omnisearch",
+    "dep:cobblestone-plugin-quick-capture",
+    "dep:cobblestone-plugin-tasks",
+    "dep:tokio",
+    "dep:arboard",
+    "cobblestone-editor/desktop",
+]
 
 [dependencies]
 dioxus = { version = "0.7.10", default-features = true, features = [] }
@@ -31,6 +42,11 @@ ammonia = "4"
 futures = "0.3"
 
 cobblestone-core = { path = "../core", optional = true }
+cobblestone-plugin-host = { path = "../plugin-host", optional = true }
+cobblestone-plugin-api = { path = "../plugin-api", optional = true }
+cobblestone-plugin-omnisearch = { path = "../plugins/omnisearch", optional = true }
+cobblestone-plugin-quick-capture = { path = "../plugins/quick-capture", optional = true }
+cobblestone-plugin-tasks = { path = "../plugins/tasks", optional = true }
 gloo-net = { version = "0.6", optional = true, features = ["http", "json"] }
 gloo-timers = { version = "0.3", optional = true, features = ["futures"] }
 tokio = { version = "1", optional = true, features = ["time", "rt"] }

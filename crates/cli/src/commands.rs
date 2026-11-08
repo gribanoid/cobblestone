@@ -93,9 +93,8 @@ pub fn cmd_backup(store: &Store, output: Option<PathBuf>) -> Result<()> {
     };
 
     if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("Cannot create backup directory '{}'", parent.display())
-        })?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Cannot create backup directory '{}'", parent.display()))?;
     }
 
     let file = File::create(&out_path)
@@ -141,10 +140,10 @@ fn zip_dir_recursive(
 
     for entry in entries {
         let path = entry.path();
-        if let Some(skip) = skip {
-            if fs::canonicalize(&path).ok().as_deref() == Some(skip) {
-                continue;
-            }
+        if let Some(skip) = skip
+            && fs::canonicalize(&path).ok().as_deref() == Some(skip)
+        {
+            continue;
         }
         let rel = path
             .strip_prefix(vault_root)
@@ -158,8 +157,8 @@ fn zip_dir_recursive(
         } else if path.is_file() {
             zip.start_file(&name, options)
                 .with_context(|| format!("Cannot add file '{name}' to backup"))?;
-            let mut src = File::open(&path)
-                .with_context(|| format!("Cannot open '{}'", path.display()))?;
+            let mut src =
+                File::open(&path).with_context(|| format!("Cannot open '{}'", path.display()))?;
             io::copy(&mut src, zip)
                 .with_context(|| format!("Cannot write '{name}' into backup"))?;
             *file_count += 1;
@@ -192,12 +191,7 @@ pub fn cmd_restore(store: &Store, archive: &Path, force: bool) -> Result<()> {
         let name = entry
             .enclosed_name()
             .map(|p| p.to_path_buf())
-            .with_context(|| {
-                format!(
-                    "Refusing unsafe path in backup: '{}'",
-                    entry.name()
-                )
-            })?;
+            .with_context(|| format!("Refusing unsafe path in backup: '{}'", entry.name()))?;
         validate_restore_relpath(&name)?;
         let dest = store.root.join(&name);
         ensure_within_vault(&store.root, &dest)?;
@@ -212,7 +206,11 @@ pub fn cmd_restore(store: &Store, archive: &Path, force: bool) -> Result<()> {
 
     if !conflicts.is_empty() {
         conflicts.sort();
-        let preview: Vec<_> = conflicts.iter().take(10).map(|s| format!("  - {s}")).collect();
+        let preview: Vec<_> = conflicts
+            .iter()
+            .take(10)
+            .map(|s| format!("  - {s}"))
+            .collect();
         let extra = conflicts.len().saturating_sub(preview.len());
         let mut msg = format!(
             "Restore aborted: {} existing file(s) would be overwritten.\n{}",
@@ -237,10 +235,9 @@ pub fn cmd_restore(store: &Store, archive: &Path, force: bool) -> Result<()> {
                 .with_context(|| format!("Cannot create '{}'", parent.display()))?;
         }
         let existed = dest.exists();
-        let mut out = File::create(&dest)
-            .with_context(|| format!("Cannot write '{}'", dest.display()))?;
-        io::copy(&mut entry, &mut out)
-            .with_context(|| format!("Cannot extract '{label}'"))?;
+        let mut out =
+            File::create(&dest).with_context(|| format!("Cannot write '{}'", dest.display()))?;
+        io::copy(&mut entry, &mut out).with_context(|| format!("Cannot extract '{label}'"))?;
         restored += 1;
         if existed {
             overwritten += 1;
@@ -271,10 +268,7 @@ fn validate_restore_relpath(rel: &Path) -> Result<()> {
         match component {
             Component::Normal(_) => {}
             Component::CurDir => {}
-            _ => bail!(
-                "Refusing unsafe path in backup: '{}'",
-                rel.display()
-            ),
+            _ => bail!("Refusing unsafe path in backup: '{}'", rel.display()),
         }
     }
     Ok(())
@@ -316,6 +310,146 @@ pub fn render_to_terminal(content: &str) {
             println!("{line}");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Plugins / projects / today / omni
+// ---------------------------------------------------------------------------
+
+pub fn cmd_today(store: &Store) -> Result<()> {
+    let host = cobblestone_plugin_host::bootstrap_builtins(clone_store(store)?, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    host.execute_command("periodic-notes:open-daily")
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    for path in host.workspace.take_open_requests() {
+        let id = path.trim_end_matches(".md");
+        println!("Today: {}", store.path_for(id).display());
+        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+        std::process::Command::new(&editor)
+            .arg(store.path_for(id))
+            .status()
+            .with_context(|| format!("Failed to launch editor '{editor}'"))?;
+    }
+    Ok(())
+}
+
+pub fn cmd_plugin_list(store: &Store) -> Result<()> {
+    let host = cobblestone_plugin_host::bootstrap_builtins(clone_store(store)?, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    for (m, on) in host.list_plugins() {
+        let flag = if on { "on " } else { "off" };
+        println!("{flag}  {}  {}  v{}", m.id, m.name, m.version);
+    }
+    Ok(())
+}
+
+pub fn cmd_plugin_enable(store: &Store, id: &str, on: bool) -> Result<()> {
+    let mut host = cobblestone_plugin_host::bootstrap_builtins(clone_store(store)?, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    host.set_enabled(id, on)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    println!(
+        "{} plugin '{id}' (restart commands to reload)",
+        if on { "Enabled" } else { "Disabled" }
+    );
+    Ok(())
+}
+
+pub fn cmd_plugin_commands(store: &Store) -> Result<()> {
+    let host = cobblestone_plugin_host::bootstrap_builtins(clone_store(store)?, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let mut cmds = host.list_commands();
+    cmds.sort_by(|a, b| a.0.cmp(&b.0));
+    for (id, name) in cmds {
+        println!("{id}\t{name}");
+    }
+    Ok(())
+}
+
+pub fn cmd_plugin_run(store: &Store, id: &str) -> Result<()> {
+    let host = cobblestone_plugin_host::bootstrap_builtins(clone_store(store)?, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    host.execute_command(id)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    for path in host.workspace.take_open_requests() {
+        println!("open: {path}");
+    }
+    for notice in host.take_notices() {
+        println!("{notice}");
+    }
+    Ok(())
+}
+
+pub fn cmd_project_list() -> Result<()> {
+    let cfg = cobblestone_core::ProjectsConfig::load()?;
+    if cfg.projects.is_empty() {
+        println!("No projects registered. Use `cb project add <name> <path>`.");
+        return Ok(());
+    }
+    for p in &cfg.projects {
+        let mark = if cfg.last_opened.as_deref() == Some(&p.name) {
+            "*"
+        } else {
+            " "
+        };
+        println!("{mark} {}  {}", p.name, p.path);
+    }
+    Ok(())
+}
+
+pub fn cmd_project_add(name: &str, path: &Path) -> Result<()> {
+    fs::create_dir_all(path)?;
+    let mut cfg = cobblestone_core::ProjectsConfig::load()?;
+    cfg.add(name, path)?;
+    cfg.save()?;
+    println!("Added project '{name}' -> {}", path.display());
+    Ok(())
+}
+
+pub fn cmd_project_open(name: &str) -> Result<()> {
+    let mut cfg = cobblestone_core::ProjectsConfig::load()?;
+    let entry = cfg
+        .get(name)
+        .with_context(|| format!("Unknown project '{name}'"))?
+        .clone();
+    if !Path::new(&entry.path).is_dir() {
+        bail!("Project '{}' is unavailable: {}", entry.name, entry.path);
+    }
+    cfg.set_last_opened(name);
+    cfg.save()?;
+    println!("Opened project '{}' ({})", entry.name, entry.path);
+    println!("Subsequent `cb` commands will use this vault (unless CB_DIR is set).");
+    Ok(())
+}
+
+pub fn cmd_project_rm(name: &str) -> Result<()> {
+    let mut cfg = cobblestone_core::ProjectsConfig::load()?;
+    if !cfg.remove(name) {
+        bail!("Unknown project '{name}'");
+    }
+    cfg.save()?;
+    println!("Removed project '{name}'");
+    Ok(())
+}
+
+pub fn cmd_omni(store: &Store, query: &str, limit: usize) -> Result<()> {
+    let host = cobblestone_plugin_host::bootstrap_builtins(clone_store(store)?, None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let hits = cobblestone_plugin_omnisearch::search_vault(&host.app, query, limit)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    if hits.is_empty() {
+        println!("No matches.");
+        return Ok(());
+    }
+    for h in hits {
+        println!("{:.3}\t{}\t{}", h.score, h.path, h.snippet);
+    }
+    Ok(())
+}
+
+/// `Store` is not Clone — rebuild from the same root for the plugin host.
+fn clone_store(store: &Store) -> Result<Store> {
+    Store::with_root(store.root.clone())
 }
 
 #[cfg(test)]

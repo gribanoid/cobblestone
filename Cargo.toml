@@ -5,6 +5,14 @@ members = [
     "crates/ui",
     "crates/editor",
     "crates/desktop-app",
+    "crates/plugin-api",
+    "crates/plugin-bridge",
+    "crates/plugin-host",
+    "crates/plugins/periodic-notes",
+    "crates/plugins/tasks",
+    "crates/plugins/quick-capture",
+    "crates/plugins/templates-engine",
+    "crates/plugins/omnisearch",
 ]
 resolver = "2"
 
