@@ -50,10 +50,18 @@ jobs:
             patchelf
 
       - name: Build desktop release
+        if: runner.os != 'macOS'
         run: cargo build -p cobblestone-desktop --release --target ${{ matrix.target }}
 
-      - name: Package binary (Unix)
-        if: runner.os != 'Windows'
+      - name: Build macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          cargo install dioxus-cli --version 0.7.10 --locked
+          make macos-dmg
+          cp "target/macos/${{ matrix.artifact }}.dmg" .
+
+      - name: Package binary (Linux)
+        if: runner.os == 'Linux'
         run: |
           bin="target/${{ matrix.target }}/release/cobblestone"
           chmod +x "$bin"
@@ -70,9 +78,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            ${{ matrix.artifact }}.tar.gz
-            ${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          path: ${{ matrix.artifact }}.*
 
   release:
     needs: build
@@ -97,17 +104,13 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | macOS (Apple Silicon) | `cobblestone-macos-aarch64.tar.gz` |
+            | macOS (Apple Silicon) | `cobblestone-macos-aarch64.dmg` |
             | Linux (x86_64) | `cobblestone-linux-x86_64.tar.gz` |
             | Windows (x86_64) | `cobblestone-windows-x86_64.zip` |
 
-            **macOS (unsigned build):** Gatekeeper may block the binary. Fix:
-
-            ```bash
-            xattr -cr ./cobblestone-macos-aarch64
-            chmod +x ./cobblestone-macos-aarch64
-            ./cobblestone-macos-aarch64
-            ```
+            **macOS:** Open the disk image and drag Cobblestone to Applications.
+            This build is not notarized. If macOS blocks the first launch, see
+            [Apple's instructions for opening a trusted app](https://support.apple.com/en-us/102445).
 
             **Linux:** ensure WebKitGTK is installed (`libwebkit2gtk-4.1-0` on Debian/Ubuntu).
         env:

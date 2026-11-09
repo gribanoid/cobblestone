@@ -14,6 +14,8 @@ Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, o
 
 ## Quick start — desktop
 
+**Install on Apple Silicon:** download `cobblestone-macos-aarch64.dmg` from [GitHub Releases](https://github.com/gribanoid/cobblestone/releases) when available, open it, and drag Cobblestone to Applications. No Apple Account or Terminal commands are needed. The build is not notarized. If macOS blocks the first launch, follow [Apple's instructions for opening a trusted app](https://support.apple.com/en-us/102445).
+
 Native window via **Dioxus** on top of `cobblestone-core` — full Rust stack, no Node/Electron.
 
 ```bash
@@ -36,11 +38,10 @@ make deps            # cargo fetch + dioxus-cli
 make desktop         # run the native Dioxus desktop app
 make desktop-build   # release binary: target/release/cobblestone
 make macos-bundle    # macOS application: target/macos/Cobblestone.app
+make macos-dmg       # macOS disk image: target/macos/cobblestone-macos-<arch>.dmg
 ```
 
-**GitHub release:** push a tag `v*` (e.g. `v0.1.0`) — CI builds platform binaries and attaches them to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).
-
-**macOS download blocked?** Unsigned builds trigger Gatekeeper. See [ROADMAP — macOS troubleshooting](ROADMAP.md#macos-damaged-and-cant-be-opened) for the fix.
+**GitHub release:** push a tag `v*` (e.g. `v0.1.0`) to build platform packages and attach them to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).
 
 Run `make help` for all build and dev commands.
 

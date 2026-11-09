@@ -170,14 +170,12 @@ Shipped:
 
 ## Distribution
 
-- [x] CI release binaries (unsigned)
+- [x] CI release packages, including a disk image for Apple Silicon
 - [ ] Homebrew, notarization, AUR, Flatpak
 
 ### macOS Gatekeeper
 
-```bash
-xattr -cr /Applications/Cobblestone.app
-```
+Current builds are not notarized. After copying the app from the disk image to Applications, see [Apple's instructions for opening a trusted app](https://support.apple.com/en-us/102445) if Gatekeeper blocks the first launch.
 
 ---
 

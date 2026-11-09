@@ -1,4 +1,4 @@
-.PHONY: help deps desktop desktop-build macos-bundle web web-build tui cli test fmt lint clippy deny doc ci dx-install
+.PHONY: help deps desktop desktop-build macos-bundle macos-dmg web web-build tui cli test fmt lint clippy deny doc ci dx-install
 
 # Where `dx` writes the bundled web app (respects CARGO_TARGET_DIR).
 DX_WEB_PUBLIC = $(shell find "$(or $(CARGO_TARGET_DIR),target)" -path '*/cobblestone-web/*/web/public' -type d 2>/dev/null | head -1)
@@ -9,6 +9,7 @@ help:
 	@echo "  make desktop        Run the native Dioxus desktop app"
 	@echo "  make desktop-build  Build the desktop release binary"
 	@echo "  make macos-bundle   Build the macOS app with its Dock icon"
+	@echo "  make macos-dmg      Build a drag-to-Applications disk image"
 	@echo "  make web-build      Build the WASM web UI (required before cb web)"
 	@echo "  make web            Run the browser UI on the default port"
 	@echo "  make tui            Run the terminal UI"
@@ -35,6 +36,20 @@ desktop-build: deps
 
 macos-bundle: dx-install
 	cd crates/desktop-app && dx bundle --macos --package-types macos --release --locked --out-dir ../../target/macos
+
+# Seal the complete app bundle, including its resources, before packaging.
+macos-dmg: macos-bundle
+	@set -eu; \
+	staging=$$(mktemp -d); \
+	trap 'rm -rf "$$staging"' EXIT; \
+	mkdir "$$staging/volume"; \
+	ditto target/macos/Cobblestone.app "$$staging/volume/Cobblestone.app"; \
+	codesign --force --sign - "$$staging/volume/Cobblestone.app"; \
+	codesign --verify --deep --strict "$$staging/volume/Cobblestone.app"; \
+	ln -s /Applications "$$staging/volume/Applications"; \
+	cp LICENSE NOTICE "$$staging/volume/"; \
+	hdiutil create -volname Cobblestone -srcfolder "$$staging/volume" -format UDZO "$$staging/Cobblestone.dmg"; \
+	mv "$$staging/Cobblestone.dmg" "target/macos/cobblestone-macos-$$(uname -m | sed 's/^arm64$$/aarch64/').dmg"
 
 web-build: deps
 	cd crates/ui && dx build --web --release
