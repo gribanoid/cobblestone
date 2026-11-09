@@ -40,16 +40,35 @@ macos-bundle: dx-install
 # Seal the complete app bundle, including its resources, before packaging.
 macos-dmg: macos-bundle
 	@set -eu; \
+	sign_identity="$${MACOS_SIGN_IDENTITY:-}"; \
+	notary_profile="$${MACOS_NOTARY_PROFILE:-}"; \
+	if { [ -n "$$sign_identity" ] && [ -z "$$notary_profile" ]; } || \
+	   { [ -z "$$sign_identity" ] && [ -n "$$notary_profile" ]; }; then \
+		echo "Set both MACOS_SIGN_IDENTITY and MACOS_NOTARY_PROFILE to build a notarized DMG." >&2; \
+		exit 1; \
+	fi; \
 	staging=$$(mktemp -d); \
 	trap 'rm -rf "$$staging"' EXIT; \
 	mkdir "$$staging/volume"; \
-	ditto target/macos/Cobblestone.app "$$staging/volume/Cobblestone.app"; \
-	codesign --force --sign - "$$staging/volume/Cobblestone.app"; \
-	codesign --verify --deep --strict "$$staging/volume/Cobblestone.app"; \
+	app="$$staging/volume/Cobblestone.app"; \
+	dmg="$$staging/Cobblestone.dmg"; \
+	ditto target/macos/Cobblestone.app "$$app"; \
+	if [ -n "$$sign_identity" ]; then \
+		codesign --force --options runtime --timestamp --sign "$$sign_identity" "$$app"; \
+	else \
+		codesign --force --sign - "$$app"; \
+	fi; \
+	codesign --verify --deep --strict "$$app"; \
 	ln -s /Applications "$$staging/volume/Applications"; \
 	cp LICENSE NOTICE "$$staging/volume/"; \
-	hdiutil create -volname Cobblestone -srcfolder "$$staging/volume" -format UDZO "$$staging/Cobblestone.dmg"; \
-	mv "$$staging/Cobblestone.dmg" "target/macos/cobblestone-macos-$$(uname -m | sed 's/^arm64$$/aarch64/').dmg"
+	hdiutil create -volname Cobblestone -srcfolder "$$staging/volume" -format UDZO "$$dmg"; \
+	if [ -n "$$sign_identity" ]; then \
+		codesign --timestamp --sign "$$sign_identity" "$$dmg"; \
+		xcrun notarytool submit "$$dmg" --keychain-profile "$$notary_profile" --wait; \
+		xcrun stapler staple "$$dmg"; \
+		xcrun stapler validate "$$dmg"; \
+	fi; \
+	mv "$$dmg" "target/macos/cobblestone-macos-$$(uname -m | sed 's/^arm64$$/aarch64/').dmg"
 
 web-build: deps
 	cd crates/ui && dx build --web --release

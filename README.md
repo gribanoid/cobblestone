@@ -43,6 +43,13 @@ make macos-dmg       # macOS disk image: target/macos/cobblestone-macos-<arch>.d
 
 **GitHub release:** push a tag `v*` (e.g. `v0.1.0`) to build platform packages and attach them to a draft [GitHub Release](https://github.com/gribanoid/cobblestone/releases).
 
+**Notarized macOS build:** the publisher can provide a Developer ID Application signing identity and a [notarytool keychain profile](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow) to produce a DMG that Gatekeeper can verify.
+
+```bash
+MACOS_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
+MACOS_NOTARY_PROFILE='cobblestone-notary' make macos-dmg
+```
+
 Run `make help` for all build and dev commands.
 
 **CI checks** (also via `make ci` / `make lint`):
