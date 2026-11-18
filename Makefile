@@ -1,7 +1,7 @@
 .PHONY: help deps desktop desktop-build macos-bundle macos-dmg web web-build tui cli test fmt lint clippy deny doc ci dx-install
 
-# Where `dx` writes the bundled web app (respects CARGO_TARGET_DIR).
-DX_WEB_PUBLIC = $(shell find "$(or $(CARGO_TARGET_DIR),target)" -path '*/cobblestone-web/*/web/public' -type d 2>/dev/null | head -1)
+# Copy the release build, even when an older debug bundle is also present.
+DX_WEB_PUBLIC = $(shell find "$(or $(CARGO_TARGET_DIR),target)" -path '*/cobblestone-web/release/web/public' -type d 2>/dev/null | head -1)
 
 help:
 	@echo "Cobblestone commands:"
@@ -71,10 +71,10 @@ macos-dmg: macos-bundle
 	mv "$$dmg" "target/macos/cobblestone-macos-$$(uname -m | sed 's/^arm64$$/aarch64/').dmg"
 
 web-build: deps
-	cd crates/ui && dx build --web --release
+	cd crates/ui && dx build --web --release --locked
 	@out="$(DX_WEB_PUBLIC)"; \
 	if [ -z "$$out" ]; then \
-	  out=$$(find "$(or $(CARGO_TARGET_DIR),target)" -path '*/cobblestone-web/*/web/public' -type d 2>/dev/null | head -1); \
+	  out=$$(find "$(or $(CARGO_TARGET_DIR),target)" -path '*/cobblestone-web/release/web/public' -type d 2>/dev/null | head -1); \
 	fi; \
 	if [ -z "$$out" ]; then echo "ERROR: dx web public dir not found"; exit 1; fi; \
 	rm -rf crates/ui/dist-web && mkdir -p crates/ui/dist-web && cp -R "$$out"/. crates/ui/dist-web/; \
@@ -90,9 +90,8 @@ cli:
 	cargo run -p cb -- $(ARGS)
 
 test:
-	cargo test -p cobblestone-core
-	cargo test -p cobblestone-ui --features desktop
-	cargo test -p cb
+	cargo test --workspace --features cobblestone-ui/desktop --locked
+	node --test crates/editor/tests/bridge.test.cjs
 
 fmt:
 	cargo fmt --all

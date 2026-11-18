@@ -78,6 +78,12 @@ jobs:
       - name: Unit / integration tests
         run: cargo test --workspace --locked
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Editor DOM bridge regressions
+        run: node --test crates/editor/tests/bridge.test.cjs
+
   doc:
     name: Docs
     runs-on: ubuntu-22.04
