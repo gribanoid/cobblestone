@@ -40,9 +40,8 @@ pub async fn run(store: Store, port: u16) -> Result<()> {
     }
     println!("Press Ctrl+C to stop.");
 
-    let _ = open::that(&url);
-
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let _ = open::that(&url);
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -189,8 +188,11 @@ async fn api_create(
         return (StatusCode::CONFLICT, "Note already exists").into_response();
     }
     let content = format!("# {}\n\n", body.title);
-    match store.write(&slug, &content) {
+    match store.create(&slug, &content) {
         Ok(_) => Json(serde_json::json!({ "slug": slug })).into_response(),
+        Err(_) if store.exists(&slug) => {
+            (StatusCode::CONFLICT, "Note already exists").into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -442,6 +444,58 @@ mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn creating_an_existing_note_preserves_its_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::with_root(dir.path().to_path_buf()).unwrap());
+        store.write("Note", "Existing work").unwrap();
+        let request = Request::put("/notes")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"title":"Note"}"#))
+            .unwrap();
+        let response = api_router()
+            .with_state(store.clone())
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(store.read("Note").unwrap(), "Existing work");
+    }
+
+    #[tokio::test]
+    async fn nested_note_paths_work_through_the_http_api() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::with_root(dir.path().to_path_buf()).unwrap());
+        let app = api_router().with_state(store.clone());
+        for (method, uri, body) in [
+            ("PUT", "/notes", r#"{"title":"Note","folder":"Nested"}"#),
+            (
+                "POST",
+                "/notes/Nested%2FNote",
+                r#"{"content":"Saved nested content"}"#,
+            ),
+            ("GET", "/notes/Nested%2FNote", ""),
+            ("GET", "/notes/Nested%2FNote/graph", ""),
+        ] {
+            let request = Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::OK
+            );
+        }
+        assert_eq!(store.read("Nested/Note").unwrap(), "Saved nested content");
+        let request = Request::delete("/notes/Nested%2FNote")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(app.oneshot(request).await.unwrap().status(), StatusCode::OK);
+        assert!(!store.exists("Nested/Note"));
+    }
 
     #[tokio::test]
     async fn action_names_are_also_valid_note_slugs() {
