@@ -5,7 +5,8 @@ mod projects;
 pub use projects::{ProjectEntry, ProjectsConfig, resolve_vault_root};
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use chrono::Local;
@@ -56,29 +57,39 @@ impl Store {
 
     pub fn create_folder(&self, path: &str) -> Result<()> {
         let path = normalize_folder_path(path)?;
-        let dir = self.root.join(&path);
+        let dir = self.checked_path(&path)?;
         fs::create_dir_all(&dir).with_context(|| format!("Cannot create folder '{}'", path))
     }
 
     pub fn read(&self, name: &str) -> Result<String> {
         let id = resolve_note_id(name)?;
-        let path = self.root.join(format!("{id}.md"));
+        let path = self.note_file_path(&id)?;
         fs::read_to_string(&path).with_context(|| format!("Note '{id}' not found"))
     }
 
     pub fn write(&self, name: &str, content: &str) -> Result<()> {
         let id = resolve_note_id(name)?;
-        let path = self.root.join(format!("{id}.md"));
+        let path = self.note_file_path(&id)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Cannot create parent directory for '{id}'"))?;
         }
-        fs::write(&path, content).with_context(|| format!("Cannot write note '{id}'"))
+        atomic_write(&path, content.as_bytes(), true)
+            .with_context(|| format!("Cannot write note '{id}'"))
+    }
+
+    /// Create a note without replacing an existing file, including one created concurrently.
+    pub fn create(&self, name: &str, content: &str) -> Result<()> {
+        let path = self.note_file_path(name)?;
+        let parent = path.parent().context("Note has no parent directory")?;
+        fs::create_dir_all(parent)?;
+        atomic_write(&path, content.as_bytes(), false)
+            .with_context(|| format!("Cannot create note '{name}'"))
     }
 
     pub fn delete(&self, name: &str) -> Result<()> {
         let id = resolve_note_id(name)?;
-        let path = self.root.join(format!("{id}.md"));
+        let path = self.note_file_path(&id)?;
         fs::remove_file(&path).with_context(|| format!("Note '{id}' not found"))
     }
 
@@ -86,7 +97,7 @@ impl Store {
     /// Returns the new note id.
     pub fn move_note(&self, from: &str, dest_folder: Option<&str>) -> Result<String> {
         let from_id = resolve_note_id(from)?;
-        let from_path = self.root.join(format!("{from_id}.md"));
+        let from_path = self.note_file_path(&from_id)?;
         if !from_path.is_file() {
             bail!("Note '{from_id}' not found");
         }
@@ -107,12 +118,12 @@ impl Store {
             bail!("Note '{new_id}' already exists");
         }
 
-        let to_path = self.root.join(format!("{new_id}.md"));
+        let to_path = self.note_file_path(&new_id)?;
         if let Some(parent) = to_path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Cannot create parent directory for '{new_id}'"))?;
         }
-        fs::rename(&from_path, &to_path)
+        move_file_noclobber(&from_path, &to_path)
             .with_context(|| format!("Cannot move '{from_id}' to '{new_id}'"))?;
         Ok(new_id)
     }
@@ -121,7 +132,7 @@ impl Store {
     /// Returns the new folder path.
     pub fn move_folder(&self, from: &str, dest_parent: Option<&str>) -> Result<String> {
         let from = normalize_folder_path(from)?;
-        let from_dir = self.root.join(&from);
+        let from_dir = self.checked_path(&from)?;
         if !from_dir.is_dir() {
             bail!("Folder '{from}' not found");
         }
@@ -142,7 +153,7 @@ impl Store {
             return Ok(new_path);
         }
 
-        let to_dir = self.root.join(&new_path);
+        let to_dir = self.checked_path(&new_path)?;
         if to_dir.exists() {
             bail!("Folder '{new_path}' already exists");
         }
@@ -171,7 +182,7 @@ impl Store {
             None => new_file,
         };
 
-        let from_path = self.root.join(format!("{from_id}.md"));
+        let from_path = self.note_file_path(&from_id)?;
         if !from_path.is_file() {
             bail!("Note '{from_id}' not found");
         }
@@ -181,7 +192,7 @@ impl Store {
         let new_content = set_content_title(&content, new_title);
 
         if from_id == new_id {
-            fs::write(&from_path, new_content)
+            atomic_write(&from_path, new_content.as_bytes(), true)
                 .with_context(|| format!("Cannot write note '{from_id}'"))?;
             return Ok(new_id);
         }
@@ -190,12 +201,12 @@ impl Store {
             bail!("Note '{new_id}' already exists");
         }
 
-        let to_path = self.root.join(format!("{new_id}.md"));
+        let to_path = self.note_file_path(&new_id)?;
         if let Some(parent) = to_path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Cannot create parent directory for '{new_id}'"))?;
         }
-        fs::write(&to_path, &new_content)
+        atomic_write(&to_path, new_content.as_bytes(), false)
             .with_context(|| format!("Cannot write note '{new_id}'"))?;
         fs::remove_file(&from_path).with_context(|| format!("Cannot remove note '{from_id}'"))?;
         Ok(new_id)
@@ -208,6 +219,9 @@ impl Store {
         if new_name.is_empty() {
             bail!("Folder name cannot be empty");
         }
+        if new_name.contains('/') || new_name.contains('\\') {
+            bail!("Folder name cannot contain path separators");
+        }
         validate_path_components(new_name)?;
 
         let new_path = match from.rsplit_once('/') {
@@ -215,16 +229,15 @@ impl Store {
             None => new_name.to_string(),
         };
 
+        let from_dir = self.checked_path(&from)?;
+        if !from_dir.is_dir() {
+            bail!("Folder '{from}' not found");
+        }
         if from == new_path {
             return Ok(new_path);
         }
 
-        let from_dir = self.root.join(&from);
-        if !from_dir.is_dir() {
-            bail!("Folder '{from}' not found");
-        }
-
-        let to_dir = self.root.join(&new_path);
+        let to_dir = self.checked_path(&new_path)?;
         if to_dir.exists() {
             bail!("Folder '{new_path}' already exists");
         }
@@ -237,7 +250,7 @@ impl Store {
     /// Delete a folder and all contents recursively.
     pub fn delete_folder(&self, path: &str) -> Result<()> {
         let path = normalize_folder_path(path)?;
-        let dir = self.root.join(&path);
+        let dir = self.checked_path(&path)?;
         if !dir.is_dir() {
             bail!("Folder '{path}' not found");
         }
@@ -253,7 +266,7 @@ impl Store {
         let rel = rel.trim().replace('\\', "/");
         let rel = rel.trim_start_matches('/');
         validate_path_components(rel)?;
-        let path = self.root.join(rel);
+        let path = self.checked_path(rel)?;
         if !path.is_file() {
             bail!("File '{rel}' not found");
         }
@@ -303,7 +316,7 @@ impl Store {
         bytes: &[u8],
     ) -> Result<String> {
         let dir = match folder.map(str::trim).filter(|f| !f.is_empty()) {
-            Some(f) => self.root.join(normalize_folder_path(f)?),
+            Some(f) => self.checked_path(&normalize_folder_path(f)?)?,
             None => self.root.clone(),
         };
         fs::create_dir_all(&dir).with_context(|| format!("Cannot create {}", dir.display()))?;
@@ -314,7 +327,7 @@ impl Store {
         };
         let taken = self.attachment_names()?;
         let dest = unique_attachment_path(&dir, &safe, &taken)?;
-        fs::write(&dest, bytes)
+        atomic_write(&dest, bytes, false)
             .with_context(|| format!("Cannot write attachment {}", dest.display()))?;
         let rel = dest
             .strip_prefix(&self.root)
@@ -338,12 +351,14 @@ impl Store {
             for entry in fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if entry.file_name().to_string_lossy().starts_with('.') {
+                if entry.file_type()?.is_symlink()
+                    || entry.file_name().to_string_lossy().starts_with('.')
+                {
                     continue;
                 }
                 if path.is_dir() {
                     walk(&path, out)?;
-                } else if is_attachment_file(&path) {
+                } else if entry.file_type()?.is_file() && is_attachment_file(&path) {
                     out.push(path);
                 }
             }
@@ -407,7 +422,31 @@ impl Store {
 
     fn note_file_path(&self, name: &str) -> Result<PathBuf> {
         let id = resolve_note_id(name)?;
-        Ok(self.root.join(format!("{id}.md")))
+        self.checked_path(&format!("{id}.md"))
+    }
+
+    // Symlinks inside a vault can point outside it or form cycles. The vault
+    // root itself may be a symlink chosen by the user.
+    fn checked_path(&self, relative: &str) -> Result<PathBuf> {
+        let mut path = self.root.clone();
+        for component in Path::new(relative).components() {
+            let Component::Normal(name) = component else {
+                bail!("Path must stay within the vault");
+            };
+            path.push(name);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    bail!(
+                        "Symbolic links inside the vault are not supported: {}",
+                        path.display()
+                    );
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(path)
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<(Note, Vec<String>)>> {
@@ -736,15 +775,68 @@ pub fn extract_wikilinks(content: &str) -> Vec<String> {
 // Private helpers
 // ---------------------------------------------------------------------------
 
+fn move_file_noclobber(from: &Path, to: &Path) -> Result<()> {
+    match fs::hard_link(from, to) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(error.into());
+        }
+        // Links may be unavailable on external drives or between mounted filesystems.
+        Err(_) => copy_file_noclobber(from, to)?,
+    }
+    fs::remove_file(from)?;
+    Ok(())
+}
+
+fn copy_file_noclobber(from: &Path, to: &Path) -> Result<()> {
+    let parent = to.parent().context("File has no parent directory")?;
+    let file = tempfile::NamedTempFile::new_in(parent)?;
+    fs::copy(from, file.path())?;
+    let modified = fs::metadata(from)?.modified()?;
+    file.as_file()
+        .set_times(fs::FileTimes::new().set_modified(modified))?;
+    file.as_file().sync_all()?;
+    file.persist_noclobber(to)?;
+    Ok(())
+}
+
+fn atomic_write(path: &Path, content: &[u8], overwrite: bool) -> Result<()> {
+    let parent = path.parent().context("File has no parent directory")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    if overwrite {
+        match fs::metadata(path) {
+            Ok(metadata) => {
+                if metadata.permissions().readonly() {
+                    bail!("File is read-only: {}", path.display());
+                }
+                file.as_file().set_permissions(metadata.permissions())?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    file.write_all(content)?;
+    file.as_file().sync_all()?;
+    if overwrite {
+        file.persist(path)?;
+    } else {
+        file.persist_noclobber(path)?;
+    }
+    Ok(())
+}
+
 fn collect_md_paths_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in
         fs::read_dir(dir).with_context(|| format!("Cannot read directory: {}", dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
+        if entry.file_type()?.is_symlink() || entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
         if path.is_dir() {
             collect_md_paths_recursive(&path, out)?;
-        } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+        } else if entry.file_type()?.is_file() && path.extension().is_some_and(|e| e == "md") {
             out.push(path);
         }
     }
@@ -774,7 +866,7 @@ fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
         let entry = entry?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') {
+        if entry.file_type()?.is_symlink() || name.starts_with('.') {
             continue;
         }
         if path.is_dir() {
@@ -785,7 +877,7 @@ fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
                 path: rel,
                 children,
             });
-        } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+        } else if entry.file_type()?.is_file() && path.extension().is_some_and(|e| e == "md") {
             match Note::from_path(root, &path) {
                 Ok(note) => notes.push(VaultNode::Note {
                     slug: note.name,
@@ -798,7 +890,7 @@ fn read_tree_dir(root: &Path, dir: &Path) -> Result<Vec<VaultNode>> {
                 }),
                 Err(e) => eprintln!("warning: skipping {}: {e}", path.display()),
             }
-        } else if is_attachment_file(&path) {
+        } else if entry.file_type()?.is_file() && is_attachment_file(&path) {
             let meta = entry.metadata().ok();
             let rel = path
                 .strip_prefix(root)
@@ -1061,6 +1153,127 @@ mod tests {
         let (_dir, store) = temp_store();
         store.write("test-note", "# Test\n\nContent").unwrap();
         assert_eq!(store.read("test-note").unwrap(), "# Test\n\nContent");
+    }
+
+    #[test]
+    fn simultaneous_creates_do_not_overwrite_the_winner() {
+        let (dir, _) = temp_store();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let attempts: Vec<_> = (0..8)
+            .map(|index| {
+                let root = dir.path().to_owned();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let store = Store::with_root(root).unwrap();
+                    let content = format!("Content from writer {index}");
+                    barrier.wait();
+                    store.create("shared", &content).ok().map(|_| content)
+                })
+            })
+            .collect();
+        let winners: Vec<_> = attempts
+            .into_iter()
+            .filter_map(|t| t.join().unwrap())
+            .collect();
+        assert_eq!(winners.len(), 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("shared.md")).unwrap(),
+            winners[0]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saves_replace_complete_files_and_preserve_permissions() {
+        use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, store) = temp_store();
+        store.write("note", "old content").unwrap();
+        let path = store.path_for("note");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        let mut original = fs::File::open(&path).unwrap();
+        store.write("note", "new content").unwrap();
+        let mut previous = String::new();
+        original.read_to_string(&mut previous).unwrap();
+        assert_eq!(
+            previous, "old content",
+            "save must not truncate the original file"
+        );
+        assert_eq!(store.read("note").unwrap(), "new content");
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o440)).unwrap();
+        assert!(store.write("note", "should fail").is_err());
+        assert_eq!(store.read("note").unwrap(), "new content");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn vault_operations_do_not_follow_symbolic_links() {
+        use std::os::unix::fs::symlink;
+
+        let (_dir, store) = temp_store();
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("secret.md"), "outside note").unwrap();
+        fs::write(outside.path().join("image.png"), b"outside image").unwrap();
+        symlink(outside.path(), store.root.join("external")).unwrap();
+        symlink(&store.root, store.root.join("cycle")).unwrap();
+        symlink(
+            outside.path().join("secret.md"),
+            store.root.join("linked.md"),
+        )
+        .unwrap();
+        store.write("local", "inside note").unwrap();
+        assert_eq!(store.list_notes().unwrap().len(), 1);
+        assert_eq!(store.list_tree().unwrap().len(), 1);
+        assert!(store.search("outside").unwrap().is_empty());
+        assert!(store.read("linked").is_err());
+        assert!(store.write("linked", "overwrite").is_err());
+        assert!(store.write("external/secret", "overwrite").is_err());
+        assert!(store.delete("external/secret").is_err());
+        assert!(store.delete_file("external/image.png").is_err());
+        assert!(store.create_folder("external/new-folder").is_err());
+        assert!(store.move_note("local", Some("external")).is_err());
+        assert!(store.rename_note("external/secret", "renamed").is_err());
+        assert!(store.delete_folder("external").is_err());
+        assert!(
+            store
+                .save_attachment(Some("external"), "photo.png", b"photo")
+                .is_err()
+        );
+        assert!(store.read_attachment("image.png").is_err());
+        assert!(store.read_attachment("external/image.png").is_err());
+        assert_eq!(
+            fs::read_to_string(outside.path().join("secret.md")).unwrap(),
+            "outside note"
+        );
+        assert!(outside.path().join("image.png").is_file());
+    }
+
+    #[test]
+    fn hidden_notes_are_excluded_from_tree_and_search() {
+        let (_dir, store) = temp_store();
+        store.write(".trash/removed", "private content").unwrap();
+        store.write(".hidden", "private content").unwrap();
+        store.write("visible", "public content").unwrap();
+        assert_eq!(store.list_tree().unwrap().len(), 1);
+        assert_eq!(store.list_notes().unwrap().len(), 1);
+        assert!(store.search("private").unwrap().is_empty());
+    }
+
+    #[test]
+    fn rename_folder_requires_an_existing_folder_and_a_single_name() {
+        let (_dir, store) = temp_store();
+        assert!(store.rename_folder("missing", "missing").is_err());
+        store.create_folder("source").unwrap();
+        store.create_folder("target").unwrap();
+        assert!(store.rename_folder("source", "target/nested").is_err());
+        assert!(store.rename_folder("source", r"target\nested").is_err());
+        assert!(store.root.join("source").is_dir());
     }
 
     #[test]
@@ -1375,6 +1588,59 @@ mod tests {
         assert_eq!(new_id, "todo");
         assert!(store.exists("todo"));
         assert!(!store.exists("projects/todo"));
+    }
+
+    #[test]
+    fn simultaneous_moves_do_not_overwrite_the_winner() {
+        let (dir, store) = temp_store();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let attempts: Vec<_> = (0..8)
+            .map(|index| {
+                let source = format!("source-{index}/shared");
+                let content = format!("Content from source {index}");
+                store.create(&source, &content).unwrap();
+                let root = dir.path().to_owned();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let store = Store::with_root(root).unwrap();
+                    barrier.wait();
+                    let moved = store.move_note(&source, None).is_ok();
+                    if moved {
+                        assert!(!store.exists(&source));
+                    } else {
+                        assert_eq!(store.read(&source).unwrap(), content);
+                    }
+                    moved.then_some(content)
+                })
+            })
+            .collect();
+        let winners: Vec<_> = attempts
+            .into_iter()
+            .filter_map(|t| t.join().unwrap())
+            .collect();
+        assert_eq!(winners.len(), 1);
+        assert_eq!(store.read("shared").unwrap(), winners[0]);
+    }
+
+    #[test]
+    fn no_clobber_move_and_copy_preserve_colliding_files() {
+        let (dir, store) = temp_store();
+        store.create("source", "original").unwrap();
+        store.create("destination", "keep this").unwrap();
+        let from = store.path_for("source");
+        let to = store.path_for("destination");
+        assert!(move_file_noclobber(&from, &to).is_err());
+        assert!(copy_file_noclobber(&from, &to).is_err());
+        assert_eq!(store.read("source").unwrap(), "original");
+        assert_eq!(store.read("destination").unwrap(), "keep this");
+
+        let copied = dir.path().join("copied.md");
+        copy_file_noclobber(&from, &copied).unwrap();
+        assert_eq!(fs::read_to_string(&copied).unwrap(), "original");
+        assert_eq!(
+            fs::metadata(&from).unwrap().modified().unwrap(),
+            fs::metadata(&copied).unwrap().modified().unwrap()
+        );
     }
 
     #[test]

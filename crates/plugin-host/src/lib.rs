@@ -73,7 +73,7 @@ impl VaultApi for StoreVault {
             return Err(PluginError::msg(format!("File already exists: {path}")));
         }
         store
-            .write(&id, content)
+            .create(&id, content)
             .map_err(|e| PluginError::msg(e.to_string()))?;
         Ok(TFile::from_vault_path(&Self::path_from_note_id(&id)))
     }
@@ -104,7 +104,7 @@ impl VaultApi for StoreVault {
             .read(&old_id)
             .map_err(|e| PluginError::msg(e.to_string()))?;
         store
-            .write(&new_id, &content)
+            .create(&new_id, &content)
             .map_err(|e| PluginError::msg(e.to_string()))?;
         store
             .delete(&old_id)

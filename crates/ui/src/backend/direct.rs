@@ -84,7 +84,7 @@ impl VaultBackend for DirectStore {
                 return Err(format!("Note '{slug}' already exists"));
             }
             let content = format!("# {title}\n\n");
-            store.write(&slug, &content).map_err(|e| e.to_string())?;
+            store.create(&slug, &content).map_err(|e| e.to_string())?;
             Ok(slug)
         })
     }
