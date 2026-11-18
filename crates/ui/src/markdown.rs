@@ -164,7 +164,11 @@ fn clean_html(html: &str) -> String {
     static SCHEMES: LazyLock<HashSet<&'static str>> =
         LazyLock::new(|| ["http", "https", "data", "mailto"].into_iter().collect());
     ammonia::Builder::default()
-        .add_tags(["img"])
+        .add_tags(["img", "input"])
+        // Preserve task state without allowing editable controls in note HTML.
+        .add_tag_attributes("input", ["checked"])
+        .set_tag_attribute_value("input", "type", "checkbox")
+        .set_tag_attribute_value("input", "disabled", "")
         .add_tag_attributes("img", ["src", "alt", "width", "height", "class"])
         .add_tag_attributes("a", ["href", "class", "data-slug", "title"])
         .add_allowed_classes("code", ["language-tasks"])
@@ -204,6 +208,30 @@ mod tests {
         let html = render_note_body("# Section\n\n## Details\n", &|_| None, &|_| None);
         assert!(html.contains("<h1>Section</h1>"));
         assert!(html.contains("<h2>Details</h2>"));
+    }
+
+    #[test]
+    fn reading_preserves_checked_and_unchecked_tasks() {
+        let html = render_note_body("- [ ] Pending\n- [x] Done\n", &|_| None, &|_| None);
+        assert_eq!(html.matches("type=\"checkbox\"").count(), 2);
+        assert_eq!(html.matches("disabled=\"\"").count(), 2);
+        assert_eq!(html.matches("checked=\"\"").count(), 1);
+    }
+
+    #[test]
+    fn raw_html_cannot_create_editable_or_executable_controls() {
+        let html = render_note_body(
+            r#"<input type="password" value="secret" autofocus onfocus="alert(1)"><script>alert(2)</script>"#,
+            &|_| None,
+            &|_| None,
+        );
+        assert!(html.contains("type=\"checkbox\""));
+        assert!(html.contains("disabled=\"\""));
+        assert!(!html.contains("password"));
+        assert!(!html.contains("secret"));
+        assert!(!html.contains("autofocus"));
+        assert!(!html.contains("onfocus"));
+        assert!(!html.contains("script"));
     }
 
     #[test]
