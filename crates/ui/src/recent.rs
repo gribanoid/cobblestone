@@ -129,6 +129,14 @@ fn now() -> u64 {
     (web_sys::js_sys::Date::now() / 1000.0) as u64
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn now() -> u64 {
+    std::time::UNIX_EPOCH
+        .elapsed()
+        .unwrap_or_default()
+        .as_secs()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,12 +180,4 @@ mod tests {
         assert_eq!(entries[1].slug, "Workspace/Plan");
         assert_eq!(entries[2].slug, "Work");
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn now() -> u64 {
-    std::time::UNIX_EPOCH
-        .elapsed()
-        .unwrap_or_default()
-        .as_secs()
 }

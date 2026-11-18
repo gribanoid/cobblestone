@@ -27,6 +27,11 @@ pub struct AppCtx {
     pub active_title: Signal<String>,
     pub active_content: Signal<String>,
     pub persisted_title: Signal<String>,
+    /// Last successfully read or saved file, used to detect recovery conflicts.
+    pub saved_content: Signal<String>,
+    pub project_path: Signal<Option<String>>,
+    #[cfg(feature = "desktop")]
+    pub(crate) recovery_session: Signal<Option<std::sync::Arc<crate::recovery::Session>>>,
     pub graph: Signal<Option<NoteGraph>>,
     pub is_dirty: Signal<bool>,
     /// Bumps on every edit; autosave only commits if gen still matches.
@@ -74,6 +79,10 @@ impl AppCtx {
             active_title: use_signal(String::new),
             active_content: use_signal(String::new),
             persisted_title: use_signal(String::new),
+            saved_content: use_signal(String::new),
+            project_path: use_signal(|| None),
+            #[cfg(feature = "desktop")]
+            recovery_session: use_signal(|| None),
             graph: use_signal(|| None),
             is_dirty: use_signal(|| false),
             dirty_gen: use_signal(|| 0u64),

@@ -17,6 +17,8 @@ pub mod markdown;
 pub mod models;
 pub mod ops;
 mod recent;
+#[cfg(feature = "desktop")]
+mod recovery;
 pub mod state;
 pub mod theme;
 pub mod timeutil;

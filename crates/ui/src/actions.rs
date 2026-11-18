@@ -23,9 +23,15 @@ use crate::util::{
 };
 
 pub(crate) async fn load_project(mut ctx: AppCtx, backend: SharedBackend) {
-    let history = RecentNotes::load(backend.vault_path().await.ok()).await;
+    let path = backend.vault_path().await.ok();
+    ctx.project_path.set(path.clone());
+    #[cfg(feature = "desktop")]
+    crate::recovery::begin(ctx);
+    let history = RecentNotes::load(path).await;
     ctx.recent_notes.set(history);
-    reload_tree(ctx, backend).await;
+    reload_tree(ctx, backend.clone()).await;
+    #[cfg(feature = "desktop")]
+    crate::recovery::restore(ctx, backend).await;
 }
 
 pub async fn reload_tree(mut ctx: AppCtx, backend: SharedBackend) {
@@ -157,9 +163,13 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
     }
     let content = ctx.active_content.peek().clone();
     let persisted = ctx.persisted_title.peek().clone();
+    if !check_saved_content(ctx, backend.clone(), &slug_at_start).await {
+        return false;
+    }
 
     let mut slug = slug_at_start.clone();
     if persisted != title {
+        let renamed_baseline = renamed_saved_content(&ctx.saved_content.peek(), &title);
         match backend.rename_note(&slug_at_start, &title).await {
             Ok(new_slug) => {
                 if ctx.active_slug.peek().as_deref() == Some(slug_at_start.as_str()) {
@@ -168,9 +178,15 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
                     if *ctx.active_title.peek() == draft_title {
                         ctx.active_title.set(title.clone());
                     }
+                    ctx.saved_content.set(renamed_baseline);
+                    #[cfg(feature = "desktop")]
+                    crate::recovery::persist(ctx);
                 }
                 recent::remap(ctx, &slug_at_start, &new_slug, false).await;
                 slug = new_slug;
+                if !check_saved_content(ctx, backend.clone(), &slug).await {
+                    return false;
+                }
             }
             Err(e) => {
                 ctx.show_error(e);
@@ -179,15 +195,19 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
         }
     }
 
-    match backend
-        .save_note(&slug, &content_with_title(&content, &title))
-        .await
-    {
+    let file_content = content_with_title(&content, &title);
+    match backend.save_note(&slug, &file_content).await {
         Ok(()) => {
             if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
                 ctx.persisted_title.set(title);
+                ctx.saved_content.set(file_content);
                 if *ctx.dirty_gen.peek() == revision {
                     ctx.is_dirty.set(false);
+                    #[cfg(feature = "desktop")]
+                    crate::recovery::clear(ctx);
+                } else {
+                    #[cfg(feature = "desktop")]
+                    crate::recovery::persist(ctx);
                 }
             }
             reload_tree(ctx, backend.clone()).await;
@@ -198,6 +218,35 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
             ctx.show_error(e);
             false
         }
+    }
+}
+
+async fn check_saved_content(mut ctx: AppCtx, backend: SharedBackend, slug: &str) -> bool {
+    match backend.get_note(slug).await {
+        Ok(note) if note.content == *ctx.saved_content.peek() => true,
+        Ok(_) => {
+            ctx.show_error("This note changed on disk. Saving was stopped to preserve both versions. Your unsaved edits are still in the editor.");
+            false
+        }
+        Err(e) => {
+            ctx.show_error(format!(
+                "Could not verify the note on disk; unsaved edits were kept: {e}"
+            ));
+            false
+        }
+    }
+}
+
+// Predict only the title change we requested. Reading a new baseline after
+// renaming could silently accept external edits absent from the editor.
+fn renamed_saved_content(content: &str, title: &str) -> String {
+    if content.starts_with("# ") {
+        let line_end = content.find('\n').map_or(content.len(), |end| {
+            content[..end].trim_end_matches('\r').len()
+        });
+        format!("# {title}{}", &content[line_end..])
+    } else {
+        format!("# {title}\n\n{content}")
     }
 }
 
@@ -242,6 +291,7 @@ pub async fn open_note(mut ctx: AppCtx, backend: SharedBackend, slug: String) {
             ctx.active_title.set(note.title.clone());
             ctx.persisted_title.set(note.title);
             ctx.active_content.set(strip_leading_heading(&note.content));
+            ctx.saved_content.set(note.content);
             ctx.is_dirty.set(false);
             ctx.graph.set(None);
             ctx.editor_insert.set(None);
@@ -437,6 +487,7 @@ async fn execute_plugin_command(
                     && *ctx.dirty_gen.peek() == revision
                 {
                     let body = strip_leading_heading(&note.content);
+                    ctx.saved_content.set(note.content);
                     if *ctx.active_content.peek() != body {
                         ctx.active_content.set(body);
                         *ctx.editor_revision.write() += 1;
@@ -529,16 +580,28 @@ pub async fn confirm_rename(mut ctx: AppCtx, backend: SharedBackend, value: Stri
     match kind {
         RenameKind::Note { slug } => {
             let slug = note_after_save(ctx, active_before.as_deref(), slug);
+            if ctx.active_slug.peek().as_deref() == Some(slug.as_str())
+                && !check_saved_content(ctx, backend.clone(), &slug).await
+            {
+                return;
+            }
             let draft_title = ctx.active_title.peek().clone();
+            let renamed_baseline = renamed_saved_content(&ctx.saved_content.peek(), &name);
             match backend.rename_note(&slug, &name).await {
                 Ok(new_slug) => {
                     recent::remap(ctx, &slug, &new_slug, false).await;
                     if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
-                        ctx.active_slug.set(Some(new_slug));
+                        ctx.active_slug.set(Some(new_slug.clone()));
                         if *ctx.active_title.peek() == draft_title {
                             ctx.active_title.set(name.clone());
                         }
                         ctx.persisted_title.set(name);
+                        ctx.saved_content.set(renamed_baseline);
+                        #[cfg(feature = "desktop")]
+                        if *ctx.is_dirty.peek() {
+                            crate::recovery::persist(ctx);
+                        }
+                        check_saved_content(ctx, backend.clone(), &new_slug).await;
                     }
                     reload_tree(ctx, backend).await;
                 }
@@ -717,6 +780,7 @@ pub fn clear_editor(mut ctx: AppCtx) {
     ctx.active_title.set(String::new());
     ctx.active_content.set(String::new());
     ctx.persisted_title.set(String::new());
+    ctx.saved_content.set(String::new());
     ctx.graph.set(None);
     ctx.is_dirty.set(false);
     ctx.editor_insert.set(None);
@@ -792,6 +856,8 @@ pub async fn attach_image(mut ctx: AppCtx, backend: SharedBackend, request: Imag
 /// Mark dirty and schedule a generation-guarded autosave (~0.8s).
 pub fn mark_dirty(mut ctx: AppCtx, ops: Ops) {
     ctx.is_dirty.set(true);
+    #[cfg(feature = "desktop")]
+    crate::recovery::persist(ctx);
     let seq = {
         let mut g = ctx.dirty_gen.write();
         *g += 1;
@@ -830,6 +896,28 @@ mod tests {
     fn state_root() -> Element {
         AppCtx::provide();
         rsx! {}
+    }
+
+    #[test]
+    fn rename_baseline_matches_storage_without_accepting_new_body_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        for original in [
+            "# Original\n\nBody",
+            "# Original\r\n\r\nBody",
+            "Body only",
+            "# Original",
+        ] {
+            store.write("Original", original).unwrap();
+            let expected = renamed_saved_content(original, "Renamed");
+            store.rename_note("Original", "Renamed").unwrap();
+            assert_eq!(expected, store.read("Renamed").unwrap());
+            store
+                .write("Renamed", "# Renamed\n\nExternal edit")
+                .unwrap();
+            assert_ne!(expected, store.read("Renamed").unwrap());
+            store.delete("Renamed").unwrap();
+        }
     }
 
     #[test]
@@ -920,6 +1008,202 @@ mod tests {
                         .starts_with("Project changed")
                 );
                 assert!(!dir.path().join("attachments").exists());
+                assert!(!dir.path().join("stale.png").exists());
+            });
+        });
+    }
+
+    #[test]
+    fn unsaved_draft_survives_restart_and_clears_only_after_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        store.write("Note", "# Note\n\nOriginal").unwrap();
+        let backend: SharedBackend = Arc::new(DirectStore::new(store));
+        let mut dom = VirtualDom::new(state_root);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            futures::executor::block_on(async {
+                load_project(ctx, backend.clone()).await;
+                open_note(ctx, backend.clone(), "Note".into()).await;
+                ctx.active_content.set("The last unsaved sentence".into());
+                ctx.active_title.set(String::new());
+                ctx.is_dirty.set(true);
+                crate::recovery::persist(ctx);
+                assert!(!flush_save(ctx, backend.clone()).await);
+            });
+        });
+        drop(dom);
+        let mut restored = VirtualDom::new(state_root);
+        restored.rebuild_in_place();
+        restored.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            futures::executor::block_on(async {
+                load_project(ctx, backend.clone()).await;
+                assert_eq!(ctx.active_slug.peek().as_deref(), Some("Note"));
+                assert_eq!(&*ctx.active_content.peek(), "The last unsaved sentence");
+                assert!(*ctx.is_dirty.peek());
+                assert_eq!(
+                    backend.get_note("Note").await.unwrap().content,
+                    "# Note\n\nOriginal"
+                );
+                ctx.active_title.set("Note".into());
+                assert!(flush_save(ctx, backend.clone()).await);
+                assert!(
+                    std::fs::read_dir(dir.path().join(".cobblestone/recovery"))
+                        .unwrap()
+                        .all(
+                            |entry| entry.unwrap().path().extension().and_then(|s| s.to_str())
+                                != Some("json")
+                        )
+                );
+                assert!(
+                    backend
+                        .get_note("Note")
+                        .await
+                        .unwrap()
+                        .content
+                        .contains("last unsaved")
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn draft_recovery_preserves_external_edits_and_existing_recovery_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        store.write("Note", "# Note\n\nOriginal").unwrap();
+        store
+            .write("Note (recovered)", "# Keep\n\nExisting recovery")
+            .unwrap();
+        let backend: SharedBackend = Arc::new(DirectStore::new(store));
+        let mut dom = VirtualDom::new(state_root);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            futures::executor::block_on(async {
+                load_project(ctx, backend.clone()).await;
+                open_note(ctx, backend.clone(), "Note".into()).await;
+                ctx.active_content.set("Unsaved draft".into());
+                ctx.is_dirty.set(true);
+                crate::recovery::persist(ctx);
+                backend
+                    .save_note("Note", "# Note\n\nExternal edit")
+                    .await
+                    .unwrap();
+                clear_editor(ctx);
+                load_project(ctx, backend.clone()).await;
+                assert_eq!(
+                    ctx.active_slug.peek().as_deref(),
+                    Some("Note (recovered 2)")
+                );
+                assert_eq!(&*ctx.active_content.peek(), "Unsaved draft");
+                assert!(flush_save(ctx, backend.clone()).await);
+                assert_eq!(
+                    backend.get_note("Note").await.unwrap().content,
+                    "# Note\n\nExternal edit"
+                );
+                assert_eq!(
+                    backend.get_note("Note (recovered)").await.unwrap().content,
+                    "# Keep\n\nExisting recovery"
+                );
+                assert!(
+                    backend
+                        .get_note("Note (recovered 2)")
+                        .await
+                        .unwrap()
+                        .content
+                        .contains("Unsaved draft")
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn saving_or_renaming_the_open_note_preserves_external_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        store.write("Note", "# Note\n\nOriginal").unwrap();
+        let backend: SharedBackend = Arc::new(DirectStore::new(store));
+        let mut dom = VirtualDom::new(state_root);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            futures::executor::block_on(async {
+                load_project(ctx, backend.clone()).await;
+                open_note(ctx, backend.clone(), "Note".into()).await;
+                backend
+                    .save_note("Note", "# Note\n\nExternal edit")
+                    .await
+                    .unwrap();
+                ctx.active_content.set("Local draft".into());
+                ctx.is_dirty.set(true);
+                crate::recovery::persist(ctx);
+                assert!(!flush_save(ctx, backend.clone()).await);
+                assert!(*ctx.is_dirty.peek());
+                assert_eq!(&*ctx.active_content.peek(), "Local draft");
+                assert_eq!(
+                    backend.get_note("Note").await.unwrap().content,
+                    "# Note\n\nExternal edit"
+                );
+
+                ctx.is_dirty.set(false);
+                ctx.modal.set(ModalState::Rename {
+                    kind: RenameKind::Note {
+                        slug: "Note".into(),
+                    },
+                    value: "Note".into(),
+                });
+                confirm_rename(ctx, backend.clone(), "Renamed".into()).await;
+                assert!(backend.get_note("Renamed").await.is_err());
+                assert_eq!(
+                    backend.get_note("Note").await.unwrap().content,
+                    "# Note\n\nExternal edit"
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn sidebar_rename_keeps_recovery_baseline_in_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        store.write("Note", "# Note\n\nOriginal").unwrap();
+        let backend: SharedBackend = Arc::new(DirectStore::new(store));
+        let mut dom = VirtualDom::new(state_root);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            futures::executor::block_on(async {
+                load_project(ctx, backend.clone()).await;
+                open_note(ctx, backend.clone(), "Note".into()).await;
+                ctx.modal.set(ModalState::Rename {
+                    kind: RenameKind::Note {
+                        slug: "Note".into(),
+                    },
+                    value: "Note".into(),
+                });
+                confirm_rename(ctx, backend.clone(), "Renamed".into()).await;
+                assert_eq!(
+                    &*ctx.saved_content.peek(),
+                    &backend.get_note("Renamed").await.unwrap().content
+                );
+                ctx.active_content.set("Unsaved after rename".into());
+                ctx.is_dirty.set(true);
+                crate::recovery::persist(ctx);
+                clear_editor(ctx);
+                load_project(ctx, backend.clone()).await;
+                assert_eq!(ctx.active_slug.peek().as_deref(), Some("Renamed"));
+                assert!(flush_save(ctx, backend.clone()).await);
+                assert!(
+                    backend
+                        .get_note("Renamed")
+                        .await
+                        .unwrap()
+                        .content
+                        .contains("Unsaved after rename")
+                );
             });
         });
     }

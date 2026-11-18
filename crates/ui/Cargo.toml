@@ -29,6 +29,7 @@ desktop  = [
     "dep:cobblestone-plugin-tasks",
     "dep:tokio",
     "dep:arboard",
+    "dep:tempfile",
     "cobblestone-editor/desktop",
 ]
 
@@ -51,6 +52,7 @@ gloo-net = { version = "0.6", optional = true, features = ["http", "json"] }
 gloo-timers = { version = "0.3", optional = true, features = ["futures"] }
 tokio = { version = "1", optional = true, features = ["time", "rt"] }
 arboard = { version = "3", optional = true }
+tempfile = { version = "3", optional = true }
 cobblestone-editor = { path = "../editor" }
 
 [dev-dependencies]

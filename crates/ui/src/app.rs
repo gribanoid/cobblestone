@@ -49,6 +49,20 @@ pub fn App() -> Element {
     let ops = spawn_ops(ctx, backend.clone());
     use_context_provider(|| ops);
 
+    #[cfg(target_arch = "wasm32")]
+    use_hook(move || {
+        document::eval(
+            r#"
+            window.addEventListener('beforeunload', event => {
+                if (document.querySelector('.app')?.dataset.dirty === 'true') {
+                    event.preventDefault();
+                    event.returnValue = '';
+                }
+            });
+        "#,
+        );
+    });
+
     // vault-style image paste / drag-drop: save to attachments/, insert `![[…]]`.
     use_hook(move || {
         let mut ctx = ctx;
@@ -199,6 +213,7 @@ pub fn App() -> Element {
             "data-theme": "{theme}",
             "data-editor-revision": "{ctx.editor_revision}",
             "data-project-revision": "{ctx.project_revision}",
+            "data-dirty": "{ctx.is_dirty}",
             tabindex: "0",
             onkeydown: move |e| {
                 if e.data().key() == Key::Escape {
