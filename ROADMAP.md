@@ -2,7 +2,7 @@
 
 Items are roughly ordered by priority. Product stays **MIT**. See [README](README.md), [NOTICE](NOTICE), [docs/plugin-bridge.md](docs/plugin-bridge.md).
 
-**Current focus:** wire plugins into everyday UX (search, tasks, settings) + vault reliability (watcher, wikilinks).
+**Current focus:** reliable everyday editing before expanding plugins and navigation.
 
 ---
 
@@ -160,18 +160,28 @@ Shipped:
 
 ## Active implementation queue
 
-1. [x] Omni search in desktop sidebar (when plugin host present)
-2. [x] `tasks:toggle` command (palette)
-3. [x] Clickable wikilinks in Reading view
-4. [x] Rust plugin host bridges: prompt / editor insert / notices / tasks panel
-5. Core watcher API (foundation for UI reload)
+Completed reliability work: atomic saves and no-clobber moves, archive validation
+before restore, per-session desktop draft recovery, and pre-save checks for
+external changes. The editor bridge and these failure paths have regression tests.
+
+1. External-change detection and conflict recovery. Watch the active vault; reload clean notes, preserve dirty drafts, and offer both versions when another editor changes the same file. Cover deletion and rename during editing.
+2. Trash and undo for destructive actions. Restore deleted notes, folders, and attachments with their original paths; never overwrite a later file with the same name.
+3. Command palette navigation. Keyboard selection and built-in create, search, switch-project and settings commands, with shortcuts discoverable in settings.
+4. Native folder picker for projects. Handle unavailable drives and duplicate paths without changing the active project on failure.
+5. Wikilink destinations. Scroll to headings/blocks; preview and optionally update inbound links when a note moves or is renamed.
+
+Release checks: workspace tests, desktop and WASM Clippy, JavaScript editor-bridge tests, and a temporary-vault smoke test covering save/reopen, project switching, images, Unicode editing, and backup/restore. Keep destructive checks away from a user's real vault.
+
+Atomic file replacement prevents partially written notes; it does not resolve simultaneous edits from independent applications. Multi-file restore validates the complete archive before publishing, but is not a rollback transaction if the disk fails during publication.
 
 ---
 
 ## Distribution
 
 - [x] CI release packages, including a disk image for Apple Silicon
-- [ ] Homebrew, notarization, AUR, Flatpak
+- [x] Optional Developer ID signing and notarization build workflow
+- [ ] Verify a signed and notarized public release on a clean Mac
+- [ ] Homebrew, AUR, Flatpak
 
 ### macOS Gatekeeper
 

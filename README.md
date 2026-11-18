@@ -19,14 +19,14 @@ Use it as a **personal knowledge base**, a **todo list**, a **daily journal**, o
 Native window via **Dioxus** on top of `cobblestone-core` — full Rust stack, no Node/Electron.
 
 ```bash
-git clone https://github.com/yourname/cobblestone
+git clone https://github.com/gribanoid/cobblestone
 cd cobblestone
 ```
 
 **Prerequisites (one-time):**
 
 ```bash
-rustc --version      # stable (1.85+)
+rustc --version      # current stable Rust
 xcode-select --install   # macOS only, if needed
 # Linux: WebKitGTK 4.1 + GTK 3 (see dioxus desktop docs)
 make deps            # cargo fetch + dioxus-cli
@@ -58,7 +58,7 @@ Run `make help` for all build and dev commands.
 |-------|------|
 | Format | `cargo fmt --check` |
 | Lints | `cargo clippy -D warnings` (desktop + wasm) |
-| Tests | `cargo test` |
+| Tests | `make test` (workspace + editor bridge; requires Node.js 22+) |
 | Docs | `cargo doc -D warnings` |
 | Advisories | `cargo deny` |
 | Memory bugs (core) | AddressSanitizer on nightly |
@@ -95,6 +95,13 @@ Desktop and browser share the same **Dioxus** UI (`cobblestone-ui`). Desktop cal
 CodeMirror is the default Markdown editor on desktop and web. Settings let you
 choose line numbers, line wrapping, tab width, or the Rust Live Preview beta.
 Use `Ctrl+E` / `⌘E` to switch between editing and reading.
+
+The desktop app journals unsaved edits in `.cobblestone/recovery` inside the
+project. After an interrupted session, it recovers a draft on the next launch;
+if the original file changed or was deleted, it creates a separate recovered
+note. Each running instance owns its own journal. Saving stops if the file has
+changed externally, preserving the editor's draft; a conflict-resolution dialog
+is planned. The web app warns before leaving a page with unsaved edits.
 
 To rebuild the bundled CodeMirror asset after changing its source, run
 `npm ci` and `npm run build` in `crates/ui/codemirror`. Cargo uses the checked-in
