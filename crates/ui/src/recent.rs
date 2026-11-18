@@ -72,15 +72,23 @@ pub(crate) async fn record(mut ctx: AppCtx, slug: &str) {
     persist(ctx).await;
 }
 
-pub(crate) async fn remap(ctx: AppCtx, from: &str, to: &str) {
+pub(crate) async fn remap(ctx: AppCtx, from: &str, to: &str, folder: bool) {
     if from == to {
         return;
     }
     let mut entries = ctx.recent_notes.peek().entries.clone();
-    for note in &mut entries {
-        note.slug = remap_path(&note.slug, from, to);
-    }
+    remap_entries(&mut entries, from, to, folder);
     replace_entries(ctx, entries).await;
+}
+
+fn remap_entries(entries: &mut [OpenedNote], from: &str, to: &str, folder: bool) {
+    for note in entries {
+        if folder && note.slug.starts_with(&format!("{from}/")) {
+            note.slug = remap_path(&note.slug, from, to);
+        } else if !folder && note.slug == from {
+            note.slug = to.into();
+        }
+    }
 }
 
 pub(crate) async fn remove_missing(ctx: AppCtx) {
@@ -119,6 +127,51 @@ fn is_recent(opened_at: u64, now: u64) -> bool {
 #[cfg(target_arch = "wasm32")]
 fn now() -> u64 {
     (web_sys::js_sys::Date::now() / 1000.0) as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renaming_note_preserves_same_named_folder_history() {
+        let mut entries = vec![
+            OpenedNote {
+                slug: "Work".into(),
+                opened_at: 10,
+            },
+            OpenedNote {
+                slug: "Work/Plan".into(),
+                opened_at: 20,
+            },
+        ];
+        remap_entries(&mut entries, "Work", "Projects", false);
+        assert_eq!(entries[0].slug, "Projects");
+        assert_eq!(entries[1].slug, "Work/Plan");
+        assert_eq!(entries[0].opened_at, 10);
+    }
+
+    #[test]
+    fn moving_folder_remaps_only_descendants() {
+        let mut entries = vec![
+            OpenedNote {
+                slug: "Work/Plan".into(),
+                opened_at: 20,
+            },
+            OpenedNote {
+                slug: "Workspace/Plan".into(),
+                opened_at: 30,
+            },
+            OpenedNote {
+                slug: "Work".into(),
+                opened_at: 40,
+            },
+        ];
+        remap_entries(&mut entries, "Work", "Archive/Work", true);
+        assert_eq!(entries[0].slug, "Archive/Work/Plan");
+        assert_eq!(entries[1].slug, "Workspace/Plan");
+        assert_eq!(entries[2].slug, "Work");
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

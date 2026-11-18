@@ -7,8 +7,9 @@ use dioxus::prelude::*;
 use futures::StreamExt;
 
 use crate::actions::{
-    apply_drop, confirm_delete, confirm_rename, create_folder, create_note, flush_save,
-    load_project, move_note_to_folder, open_note, run_search, switch_vault, toggle_reading,
+    ImageAttachment, apply_drop, attach_image, confirm_delete, confirm_rename, create_folder,
+    create_note, flush_save, load_project, move_note_to_folder, open_note, run_search,
+    switch_vault, toggle_reading,
 };
 use crate::backend::SharedBackend;
 use crate::state::AppCtx;
@@ -19,7 +20,7 @@ use cobblestone_plugin_host::SharedPluginHost;
 #[cfg(feature = "desktop")]
 use crate::actions::{confirm_plugin_prompt, run_plugin_command};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum AppOp {
     ReloadTree,
     Search,
@@ -44,6 +45,10 @@ pub enum AppOp {
     Save,
     SwitchVault(String),
     ToggleReading,
+    AttachImage {
+        request: ImageAttachment,
+        complete: futures::channel::oneshot::Sender<()>,
+    },
     /// Run a first-party plugin command id (desktop host).
     RunPluginCommand(String),
     /// Finish a PromptValue modal and run the pending plugin command.
@@ -94,6 +99,10 @@ async fn dispatch(ctx: AppCtx, backend: SharedBackend, host: Option<SharedPlugin
         }
         AppOp::SwitchVault(path) => switch_vault(ctx, backend, path).await,
         AppOp::ToggleReading => toggle_reading(ctx),
+        AppOp::AttachImage { request, complete } => {
+            attach_image(ctx, backend, request).await;
+            let _ = complete.send(());
+        }
         AppOp::RunPluginCommand(id) => run_plugin_command(ctx, backend, host, id).await,
         AppOp::ConfirmPluginPrompt { command, value } => {
             confirm_plugin_prompt(ctx, backend, host, command, value).await
@@ -118,6 +127,10 @@ async fn dispatch(ctx: AppCtx, backend: SharedBackend, op: AppOp) {
         }
         AppOp::SwitchVault(path) => switch_vault(ctx, backend, path).await,
         AppOp::ToggleReading => toggle_reading(ctx),
+        AppOp::AttachImage { request, complete } => {
+            attach_image(ctx, backend, request).await;
+            let _ = complete.send(());
+        }
         AppOp::RunPluginCommand(_) | AppOp::ConfirmPluginPrompt { .. } => {
             let mut ctx = ctx;
             ctx.show_error("Plugins run in the desktop app / CLI only");

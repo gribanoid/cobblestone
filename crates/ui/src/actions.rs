@@ -169,7 +169,7 @@ pub async fn flush_save(mut ctx: AppCtx, backend: SharedBackend) -> bool {
                         ctx.active_title.set(title.clone());
                     }
                 }
-                recent::remap(ctx, &slug_at_start, &new_slug).await;
+                recent::remap(ctx, &slug_at_start, &new_slug, false).await;
                 slug = new_slug;
             }
             Err(e) => {
@@ -266,6 +266,7 @@ pub async fn switch_vault(mut ctx: AppCtx, backend: SharedBackend, path: String)
     }
     match backend.switch_vault(&path).await {
         Ok(()) => {
+            *ctx.project_revision.write() += 1;
             ctx.notes.write().clear();
             ctx.tree.write().clear();
             clear_editor(ctx);
@@ -531,7 +532,7 @@ pub async fn confirm_rename(mut ctx: AppCtx, backend: SharedBackend, value: Stri
             let draft_title = ctx.active_title.peek().clone();
             match backend.rename_note(&slug, &name).await {
                 Ok(new_slug) => {
-                    recent::remap(ctx, &slug, &new_slug).await;
+                    recent::remap(ctx, &slug, &new_slug, false).await;
                     if ctx.active_slug.peek().as_deref() == Some(slug.as_str()) {
                         ctx.active_slug.set(Some(new_slug));
                         if *ctx.active_title.peek() == draft_title {
@@ -546,7 +547,7 @@ pub async fn confirm_rename(mut ctx: AppCtx, backend: SharedBackend, value: Stri
         }
         RenameKind::Folder { path } => match backend.rename_folder(&path, &name).await {
             Ok(new_path) => {
-                recent::remap(ctx, &path, &new_path).await;
+                recent::remap(ctx, &path, &new_path, true).await;
                 let expanded: HashSet<_> = ctx
                     .expanded
                     .peek()
@@ -594,7 +595,7 @@ pub async fn confirm_delete(mut ctx: AppCtx, backend: SharedBackend) {
             Ok(()) => {
                 let active = ctx.active_slug.peek().clone();
                 if let Some(slug) = active
-                    && (slug == path || slug.starts_with(&format!("{path}/")))
+                    && slug.starts_with(&format!("{path}/"))
                 {
                     clear_editor(ctx);
                 }
@@ -633,7 +634,7 @@ pub async fn move_note_to_folder(
     let move_slug = note_after_save(ctx, active_before.as_deref(), slug);
     match backend.move_note(&move_slug, folder.as_deref()).await {
         Ok(new_slug) => {
-            recent::remap(ctx, &move_slug, &new_slug).await;
+            recent::remap(ctx, &move_slug, &new_slug, false).await;
             if let Some(f) = &folder {
                 ctx.expanded.write().insert(f.clone());
             }
@@ -668,13 +669,13 @@ pub async fn move_folder_to_parent(
         .active_slug
         .peek()
         .as_ref()
-        .is_some_and(|s| s == &folder_path || s.starts_with(&format!("{folder_path}/")));
+        .is_some_and(|s| s.starts_with(&format!("{folder_path}/")));
     if affects_active && !flush_save(ctx, backend.clone()).await {
         return;
     }
     match backend.move_folder(&folder_path, dest.as_deref()).await {
         Ok(new_path) => {
-            recent::remap(ctx, &folder_path, &new_path).await;
+            recent::remap(ctx, &folder_path, &new_path, true).await;
             if let Some(d) = &dest {
                 ctx.expanded.write().insert(d.clone());
             }
@@ -687,7 +688,9 @@ pub async fn move_folder_to_parent(
                 .collect();
             ctx.expanded.set(expanded);
             let active = ctx.active_slug.peek().clone();
-            if let Some(slug) = active {
+            if let Some(slug) = active
+                && slug.starts_with(&format!("{folder_path}/"))
+            {
                 ctx.active_slug
                     .set(Some(remap_path(&slug, &folder_path, &new_path)));
             }
@@ -720,6 +723,7 @@ pub fn clear_editor(mut ctx: AppCtx) {
 }
 
 /// Where an attached file goes.
+#[derive(Debug)]
 pub enum AttachTarget {
     /// Pasted / dropped into the open note: saved next to it, `![[name]]`
     /// inserted at the caret.
@@ -728,17 +732,30 @@ pub enum AttachTarget {
     Folder(String),
 }
 
+#[derive(Debug)]
+pub struct ImageAttachment {
+    pub target: AttachTarget,
+    pub filename: String,
+    pub bytes: Vec<u8>,
+    pub editor_revision: u64,
+    pub project_revision: u64,
+}
+
 /// Save an image (vault-style). Empty `filename` → `Pasted image <stamp>.png`.
 /// For [`AttachTarget::ActiveNote`] the editor edit triggers autosave.
-pub async fn attach_image(
-    mut ctx: AppCtx,
-    backend: SharedBackend,
-    target: AttachTarget,
-    filename: String,
-    bytes: Vec<u8>,
-) {
+pub async fn attach_image(mut ctx: AppCtx, backend: SharedBackend, request: ImageAttachment) {
+    if *ctx.project_revision.peek() != request.project_revision {
+        ctx.show_error("Project changed before the image could be attached. Please try again.");
+        return;
+    }
+    if matches!(request.target, AttachTarget::ActiveNote)
+        && *ctx.editor_revision.peek() != request.editor_revision
+    {
+        ctx.show_error("Note changed before the image could be attached. Please try again.");
+        return;
+    }
     let revision = *ctx.editor_revision.peek();
-    let (folder, note) = match target {
+    let (folder, note) = match request.target {
         AttachTarget::ActiveNote => {
             let Some(slug) = ctx.active_slug.peek().clone() else {
                 ctx.show_error("Open a note to attach an image");
@@ -752,7 +769,7 @@ pub async fn attach_image(
         AttachTarget::Folder(f) => ((!f.is_empty()).then_some(f), None),
     };
     match backend
-        .save_attachment(folder.as_deref(), &filename, &bytes)
+        .save_attachment(folder.as_deref(), &request.filename, &request.bytes)
         .await
     {
         Ok(rel) => {
@@ -801,6 +818,111 @@ pub fn schedule_search(mut ctx: AppCtx, ops: Ops, query: String) {
             ops.send(AppOp::Search);
         }
     });
+}
+
+#[cfg(all(test, feature = "desktop"))]
+mod tests {
+    use super::*;
+    use crate::backend::DirectStore;
+    use cobblestone_core::Store;
+    use std::sync::Arc;
+
+    fn state_root() -> Element {
+        AppCtx::provide();
+        rsx! {}
+    }
+
+    #[test]
+    fn folder_operations_leave_same_named_note_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        store.write("Work", "# Work\n\nKeep this note.").unwrap();
+        store.write("Work/Plan", "# Plan\n").unwrap();
+        store.create_folder("Archive").unwrap();
+        let backend: SharedBackend = Arc::new(DirectStore::new(store));
+        let mut dom = VirtualDom::new(state_root);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            futures::executor::block_on(async {
+                open_note(ctx, backend.clone(), "Work".into()).await;
+                move_folder_to_parent(ctx, backend.clone(), "Work".into(), Some("Archive".into()))
+                    .await;
+                assert_eq!(ctx.active_slug.peek().as_deref(), Some("Work"));
+                assert!(ctx.active_content.peek().contains("Keep this note."));
+
+                backend.create_folder("Work").await.unwrap();
+                ctx.modal.set(ModalState::Delete {
+                    kind: DeleteKind::Folder {
+                        path: "Work".into(),
+                    },
+                    title: "Delete folder".into(),
+                    message: "Work".into(),
+                });
+                confirm_delete(ctx, backend.clone()).await;
+                assert_eq!(ctx.active_slug.peek().as_deref(), Some("Work"));
+                assert!(backend.get_note("Work").await.is_ok());
+            });
+        });
+    }
+
+    #[test]
+    fn queued_images_cannot_follow_the_user_to_another_note_or_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_owned()).unwrap();
+        let backend: SharedBackend = Arc::new(DirectStore::new(store));
+        let mut dom = VirtualDom::new(state_root);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::APP, || {
+            let mut ctx = consume_context::<AppCtx>();
+            ctx.active_slug.set(Some("Other".into()));
+            ctx.editor_revision.set(1);
+            futures::executor::block_on(async {
+                attach_image(
+                    ctx,
+                    backend.clone(),
+                    ImageAttachment {
+                        target: AttachTarget::ActiveNote,
+                        filename: "stale.png".into(),
+                        bytes: vec![1, 2, 3],
+                        editor_revision: 0,
+                        project_revision: 0,
+                    },
+                )
+                .await;
+                assert!(
+                    ctx.error
+                        .peek()
+                        .as_deref()
+                        .unwrap()
+                        .starts_with("Note changed")
+                );
+                assert!(ctx.editor_insert.peek().is_none());
+
+                ctx.project_revision.set(1);
+                attach_image(
+                    ctx,
+                    backend.clone(),
+                    ImageAttachment {
+                        target: AttachTarget::Folder(String::new()),
+                        filename: "stale.png".into(),
+                        bytes: vec![1, 2, 3],
+                        editor_revision: 1,
+                        project_revision: 0,
+                    },
+                )
+                .await;
+                assert!(
+                    ctx.error
+                        .peek()
+                        .as_deref()
+                        .unwrap()
+                        .starts_with("Project changed")
+                );
+                assert!(!dir.path().join("attachments").exists());
+            });
+        });
+    }
 }
 
 pub fn toggle_folder(mut ctx: AppCtx, path: String) {

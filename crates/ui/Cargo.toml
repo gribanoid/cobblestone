@@ -53,6 +53,9 @@ tokio = { version = "1", optional = true, features = ["time", "rt"] }
 arboard = { version = "3", optional = true }
 cobblestone-editor = { path = "../editor" }
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

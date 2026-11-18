@@ -51,6 +51,8 @@ pub struct AppCtx {
     pub editor_insert: Signal<Option<String>>,
     /// Bumps when the active editor document is opened, cleared or replaced.
     pub editor_revision: Signal<u64>,
+    /// Changes on successful vault switches to reject queued attachment requests.
+    pub project_revision: Signal<u64>,
     /// Source / Live Preview / Reading (vault-style).
     pub editor_mode: Signal<EditorMode>,
     pub editor_preferences: Signal<EditorPreferences>,
@@ -89,6 +91,7 @@ impl AppCtx {
             focus_search_gen: use_signal(|| 0u64),
             editor_insert: use_signal(|| None),
             editor_revision: use_signal(|| 0),
+            project_revision: use_signal(|| 0),
             editor_mode: use_signal(EditorMode::default),
             editor_preferences: use_signal(EditorPreferences::default),
             project_label: use_signal(|| "Cobblestone".into()),

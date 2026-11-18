@@ -109,9 +109,17 @@
 
   /** `folder` (string) → save into that sidebar folder without embedding;
    *  omitted → save next to the open note and insert ![[…]] at the caret. */
-  async function sendImageFile(file, filename, folder) {
+  function attachmentContext() {
+    const app = document.querySelector(".app");
+    return {
+      editor_revision: Number(app?.dataset.editorRevision || 0),
+      project_revision: Number(app?.dataset.projectRevision || 0),
+    };
+  }
+
+  async function sendImageFile(file, filename, folder, context = attachmentContext()) {
     const data_base64 = await blobToBase64(file);
-    const msg = { filename: filename, data_base64: data_base64 };
+    const msg = { filename: filename, data_base64: data_base64, ...context };
     if (typeof folder === "string") msg.folder = folder;
     dioxus.send(msg);
     await dioxus.recv();
@@ -119,11 +127,12 @@
 
   async function attachFiles(fileList, folder) {
     const files = Array.prototype.slice.call(fileList || []).filter(isImageFile);
+    const context = attachmentContext();
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const filename = droppedImageFilename(file);
       try {
-        await sendImageFile(file, filename, folder);
+        await sendImageFile(file, filename, folder, context);
       } catch (err) {
         console.error("cobblestone attach image failed", err);
         try {

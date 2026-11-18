@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::actions::{AttachTarget, attach_image};
+use crate::actions::{AttachTarget, ImageAttachment};
 use crate::backend::SharedBackend;
 use crate::components::{ContextMenu, DragPreview, EditorArea, Modals, RightPanel, Sidebar};
 use crate::ops::{AppOp, spawn_ops};
@@ -19,6 +19,10 @@ struct PasteImageReq {
     filename: Option<String>,
     data_base64: Option<String>,
     error: Option<String>,
+    #[serde(default)]
+    editor_revision: u64,
+    #[serde(default)]
+    project_revision: u64,
 }
 
 #[derive(Serialize)]
@@ -47,7 +51,6 @@ pub fn App() -> Element {
 
     // vault-style image paste / drag-drop: save to attachments/, insert `![[…]]`.
     use_hook(move || {
-        let backend = backend.clone();
         let mut ctx = ctx;
         spawn(async move {
             let mut eval = document::eval(include_str!("../assets/paste_image.js"));
@@ -67,7 +70,18 @@ pub fn App() -> Element {
                     None => AttachTarget::ActiveNote,
                 };
                 match decode_base64(&b64) {
-                    Ok(bytes) => attach_image(ctx, backend.clone(), target, filename, bytes).await,
+                    Ok(bytes) => {
+                        let request = ImageAttachment {
+                            target,
+                            filename,
+                            bytes,
+                            editor_revision: req.editor_revision,
+                            project_revision: req.project_revision,
+                        };
+                        let (complete, pending) = futures::channel::oneshot::channel();
+                        ops.send(AppOp::AttachImage { request, complete });
+                        let _ = pending.await;
+                    }
                     Err(e) => ctx.show_error(format!("Attach image: {e}")),
                 }
                 let _ = eval.send(PasteImageReply {
@@ -183,6 +197,8 @@ pub fn App() -> Element {
         div {
             class: "app",
             "data-theme": "{theme}",
+            "data-editor-revision": "{ctx.editor_revision}",
+            "data-project-revision": "{ctx.project_revision}",
             tabindex: "0",
             onkeydown: move |e| {
                 if e.data().key() == Key::Escape {

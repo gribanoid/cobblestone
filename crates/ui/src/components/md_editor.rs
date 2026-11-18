@@ -4,9 +4,8 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::actions::{AttachTarget, attach_image, mark_dirty};
-use crate::backend::SharedBackend;
-use crate::ops::Ops;
+use crate::actions::{AttachTarget, ImageAttachment, mark_dirty};
+use crate::ops::{AppOp, Ops};
 use crate::state::AppCtx;
 
 /// Cobblestone note editor — thin wrapper around `cobblestone-editor`.
@@ -14,7 +13,6 @@ use crate::state::AppCtx;
 pub fn MarkdownEditor(image_srcs: Signal<HashMap<String, String>>) -> Element {
     let ctx = use_context::<AppCtx>();
     let ops = use_context::<Ops>();
-    let backend = use_context::<SharedBackend>();
     let mount_key = ctx.active_slug.read().clone().unwrap_or_default();
 
     rsx! {
@@ -27,16 +25,17 @@ pub fn MarkdownEditor(image_srcs: Signal<HashMap<String, String>>) -> Element {
                 image_srcs: image_srcs,
                 insert_embed: ctx.editor_insert,
                 on_paste_image: move |img: cobblestone_editor::PastedImage| {
-                    let backend = backend.clone();
-                    spawn(async move {
-                        attach_image(
-                            ctx,
-                            backend,
-                            AttachTarget::ActiveNote,
-                            img.filename.unwrap_or_default(),
-                            img.bytes,
-                        )
-                        .await;
+                    let request = ImageAttachment {
+                        target: AttachTarget::ActiveNote,
+                        filename: img.filename.unwrap_or_default(),
+                        bytes: img.bytes,
+                        editor_revision: *ctx.editor_revision.peek(),
+                        project_revision: *ctx.project_revision.peek(),
+                    };
+                    let (complete, _) = futures::channel::oneshot::channel();
+                    ops.send(AppOp::AttachImage {
+                        request,
+                        complete,
                     });
                 },
             }
