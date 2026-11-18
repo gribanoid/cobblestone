@@ -87,8 +87,8 @@ pub fn reveal_prefix(block: &Block) -> String {
     }
 }
 
-/// Caret offsets are char counts (matches JS `selectionStart` for BMP text),
-/// never UTF-8 byte offsets.
+/// Caret offsets are Unicode scalar counts, never UTF-8 bytes or DOM UTF-16 units.
+/// The DOM bridge converts offsets at the boundary.
 pub fn char_len(s: &str) -> usize {
     s.chars().count()
 }
@@ -253,7 +253,7 @@ fn delete_line_join_prev(mut blocks: Vec<Block>, index: usize) -> DocState {
         }
         return DocState::with_blocks(blocks, 0, Some(0), None);
     }
-    // Char count matches JS `value.length` for BMP text (setSelectionRange).
+    // Caret offsets in document transforms are Unicode scalar counts.
     let prev_len = blocks[index - 1].body().chars().count();
     blocks.remove(index);
     if blocks.is_empty() {
@@ -318,6 +318,11 @@ pub fn own_line_insert_pos(state: &DocState, pos: usize, dom_value: &str) -> usi
 }
 
 pub fn paste_text(state: &DocState, pasted: &str, caret: usize) -> DocState {
+    paste_text_range(state, pasted, caret, caret)
+}
+
+/// Replace the focused textarea selection, preserving its Markdown container.
+pub fn paste_text_range(state: &DocState, pasted: &str, start: usize, end: usize) -> DocState {
     let mut blocks = state.blocks();
     let index = state.focus;
     if index >= blocks.len() || pasted.is_empty() {
@@ -326,16 +331,24 @@ pub fn paste_text(state: &DocState, pasted: &str, caret: usize) -> DocState {
 
     let revealing = state.reveal.as_ref().is_some_and(|(i, _)| *i == index);
     let cur = blocks[index].clone();
-    let body = paste_line_text(state);
-    let caret = caret.min(char_len(&body));
+    let mut body = paste_line_text(state);
+    let caret = start.min(char_len(&body));
+    let end = end.max(caret).min(char_len(&body));
     let at = byte_at(&body, caret);
+    body.replace_range(at..byte_at(&body, end), "");
+
+    if matches!(cur.kind, BlockKind::CodeFence { .. }) {
+        body.insert_str(at, pasted);
+        blocks[index] = cur.with_body(&body);
+        return DocState::with_blocks(blocks, index, Some(caret + char_len(pasted)), None);
+    }
 
     if !pasted.contains('\n') {
         let mut s = body;
         s.insert_str(at, pasted);
         let new_caret = caret + char_len(pasted);
         if revealing || is_source_only(&cur.kind) {
-            return apply_reveal(
+            let mut next = apply_reveal(
                 &DocState {
                     caret: Some(caret),
                     reveal: Some((index, paste_line_text(state))),
@@ -343,6 +356,10 @@ pub fn paste_text(state: &DocState, pasted: &str, caret: usize) -> DocState {
                 },
                 &s,
             );
+            let visible_len = char_len(&paste_line_text(&next));
+            let prefix_len = char_len(&s).saturating_sub(visible_len);
+            next.caret = Some(new_caret.saturating_sub(prefix_len).min(visible_len));
+            return next;
         }
         if is_structural(&cur.kind) {
             blocks[index] = cur.with_body(&s);
@@ -379,7 +396,10 @@ pub fn paste_text(state: &DocState, pasted: &str, caret: usize) -> DocState {
         blocks.insert(index + offset, Block::parse_line(&raw));
     }
     let focus = index + offset;
-    let caret_at = blocks.get(focus).map(|b| char_len(b.body())).unwrap_or(0);
+    let caret_at = blocks
+        .get(focus)
+        .map(|b| char_len(b.body()).saturating_sub(char_len(after)))
+        .unwrap_or(0);
     DocState::with_blocks(blocks, focus, Some(caret_at), None)
 }
 
@@ -805,7 +825,7 @@ mod tests {
         assert_eq!(out.caret, Some(5));
         let multi = paste_text(&s, "а\nб", 3);
         assert_eq!(multi.text, "Приа\nбвет");
-        assert_eq!(multi.caret, Some(4));
+        assert_eq!(multi.caret, Some(1));
     }
 
     #[test]

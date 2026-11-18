@@ -12,15 +12,18 @@ if (!window.__cbMdShortcutBound) {
     if (!el || el.tagName !== 'TEXTAREA') return null;
     if (!el.classList.contains('cb-md-input') &&
         !el.classList.contains('cb-md-textarea')) return null;
-    const a = el.selectionStart|0, b = el.selectionEnd|0;
-    return { el, a, b, v: el.value || '' };
+    const v = el.value || '';
+    // Rust edits count Unicode scalars; textarea offsets count UTF-16 units.
+    const a = Array.from(v.slice(0, el.selectionStart)).length;
+    const b = Array.from(v.slice(0, el.selectionEnd)).length;
+    return { el, a, b, v };
   };
   const copyText = () => {
     const root = document.querySelector('.cb-md-editor');
     if (root && root.classList.contains('cb-md-has-sel'))
       return window.__cbMdDocSelText || '';
     const s = lineSel();
-    if (s && s.a !== s.b) return s.v.slice(s.a, s.b);
+    if (s && s.a !== s.b) return Array.from(s.v).slice(s.a, s.b).join('');
     return '';
   };
   const editorRoot = (e) => {

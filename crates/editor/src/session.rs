@@ -6,7 +6,7 @@
 use crate::block::{Block, BlockKind, join_blocks, parse_blocks};
 use crate::edit::{
     DocState, apply_body, apply_reveal, backspace, byte_at, char_len, enter, indent,
-    is_source_only, own_line_insert_pos, paste_line_text, paste_text,
+    is_source_only, own_line_insert_pos, paste_line_text, paste_text_range,
 };
 use crate::history::History;
 use crate::selection::{self, BlockRange};
@@ -42,6 +42,7 @@ pub enum EditorCmd {
         text: String,
         own_line: bool,
         dom_pos: usize,
+        dom_end: usize,
         dom_value: String,
     },
     Indent {
@@ -202,8 +203,9 @@ impl EditorSession {
                 text,
                 own_line,
                 dom_pos,
+                dom_end,
                 dom_value,
-            } => self.cmd_paste(text, own_line, dom_pos, dom_value),
+            } => self.cmd_paste(text, own_line, dom_pos, dom_end, dom_value),
             EditorCmd::Indent { deeper } => {
                 self.doc_sel = None;
                 let next = indent(&self.doc, deeper);
@@ -393,6 +395,7 @@ impl EditorSession {
         text: String,
         own_line: bool,
         dom_pos: usize,
+        dom_end: usize,
         dom_value: String,
     ) -> EditorEffect {
         if let Some(range) = self.doc_sel.take() {
@@ -424,7 +427,8 @@ impl EditorSession {
         } else {
             text
         };
-        let next = paste_text(&self.doc, &text, pos);
+        let end = if own_line { pos } else { dom_end };
+        let next = paste_text_range(&self.doc, &text, pos, end);
         self.commit(next, false);
         let mut fx = self.effect_from_doc(true, true);
         fx.scroll_into_view = true;
@@ -541,6 +545,7 @@ mod scenarios {
             text: text.to_string(),
             own_line: true,
             dom_pos,
+            dom_end: dom_pos,
             dom_value: dom_value.to_string(),
         });
     }
@@ -585,6 +590,52 @@ mod scenarios {
         s.dispatch(EditorCmd::EnsureSourceReveal);
         paste_own(&mut s, "![[b.png]]", 18, "a.png");
         assert_eq!(s.text(), "![[a.png]]\n![[b.png]]");
+    }
+
+    #[test]
+    fn paste_replaces_list_body_selection_as_one_undo_step() {
+        let mut s = sess("- [x] old task");
+        s.dispatch(EditorCmd::Paste {
+            text: "new 😀 task".into(),
+            own_line: false,
+            dom_pos: 0,
+            dom_end: 8,
+            dom_value: "old task".into(),
+        });
+        assert_eq!(s.text(), "- [x] new 😀 task");
+        assert_eq!(s.doc.caret, Some(10));
+        s.dispatch(EditorCmd::Undo);
+        assert_eq!(s.text(), "- [x] old task");
+    }
+
+    #[test]
+    fn multiline_paste_replaces_selection_and_keeps_caret_before_suffix() {
+        let mut s = sess("😀 old tail");
+        s.dispatch(EditorCmd::Paste {
+            text: "new\ntext".into(),
+            own_line: false,
+            dom_pos: 2,
+            dom_end: 5,
+            dom_value: "😀 old tail".into(),
+        });
+        assert_eq!(s.text(), "😀 new\ntext tail");
+        assert_eq!(s.doc.focus, 1);
+        assert_eq!(s.doc.caret, Some(4));
+    }
+
+    #[test]
+    fn paste_inside_fenced_code_keeps_fence_and_language() {
+        let mut s = sess("```rust\nlet old = 1;\n```\nafter");
+        s.dispatch(EditorCmd::Paste {
+            text: "new\nvalue".into(),
+            own_line: false,
+            dom_pos: 4,
+            dom_end: 7,
+            dom_value: "let old = 1;".into(),
+        });
+        assert_eq!(s.text(), "```rust\nlet new\nvalue = 1;\n```\nafter");
+        assert_eq!(s.doc.focus, 0);
+        assert_eq!(s.doc.caret, Some(13));
     }
 
     #[test]

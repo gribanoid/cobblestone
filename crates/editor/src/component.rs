@@ -653,13 +653,18 @@ fn handle_paste(
               '[data-block-idx="{index}"] .cb-md-input, .cb-md-block-active .cb-md-textarea'
             );
             const v = el ? (el.value || '') : '';
-            dioxus.send(el ? [{had_focus} ? (el.selectionStart|0) : v.length, v] : [0, '']);
+            const pos = offset => Array.from(v.slice(0, offset)).length;
+            dioxus.send(el ? [
+              {had_focus} ? pos(el.selectionStart) : Array.from(v).length,
+              {had_focus} ? pos(el.selectionEnd) : Array.from(v).length,
+              v
+            ] : [0, 0, '']);
             "#
         ));
-        let (dom_pos, dom_value) = eval
-            .recv::<(usize, String)>()
+        let (dom_pos, dom_end, dom_value) = eval
+            .recv::<(usize, usize, String)>()
             .await
-            .unwrap_or((0, String::new()));
+            .unwrap_or((0, 0, String::new()));
         dispatch_session(
             value,
             history,
@@ -672,6 +677,7 @@ fn handle_paste(
                 text,
                 own_line,
                 dom_pos,
+                dom_end,
                 dom_value,
             },
         );
@@ -869,6 +875,7 @@ fn restore_line_caret_when(
               const computePos = (el) => {{
                 const val = el.value || '';
                 const len = val.length;
+                const chars = Array.from(val);
                 if (clickX !== null && Number.isFinite(clickX)) {{
                   const rect = el.getBoundingClientRect();
                   if (len === 0 || clickX >= rect.right - 4) return len;
@@ -877,16 +884,16 @@ fn restore_line_caret_when(
                   const canvas = document.createElement('canvas');
                   const ctx = canvas.getContext('2d');
                   ctx.font = `${{style.fontWeight}} ${{style.fontSize}} ${{style.fontFamily}}`;
-                  let lo = 0, hi = len;
+                  let lo = 0, hi = chars.length;
                   while (lo < hi) {{
                     const mid = (lo + hi + 1) >> 1;
-                    if (ctx.measureText(val.slice(0, mid)).width <= clickX - rect.left) lo = mid;
+                    if (ctx.measureText(chars.slice(0, mid).join('')).width <= clickX - rect.left) lo = mid;
                     else hi = mid - 1;
                   }}
-                  return lo;
+                  return chars.slice(0, lo).join('').length;
                 }}
                 if (wantPos === null || wantPos === undefined) return len;
-                return Math.min(wantPos, len);
+                return chars.slice(0, wantPos).join('').length;
               }};
 
               const place = () => {{
@@ -1012,7 +1019,8 @@ async fn line_selection_range() -> (usize, usize) {
           '.cb-md-block-active .cb-md-input, .cb-md-block-active .cb-md-textarea'
         );
         if (!el) { dioxus.send([0, 0]); return; }
-        dioxus.send([el.selectionStart|0, el.selectionEnd|0]);
+        const pos = offset => Array.from((el.value || '').slice(0, offset)).length;
+        dioxus.send([pos(el.selectionStart), pos(el.selectionEnd)]);
         "#,
     );
     eval.recv::<(usize, usize)>().await.unwrap_or((0, 0))
