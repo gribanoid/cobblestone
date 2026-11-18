@@ -24,7 +24,7 @@ pub fn cmd_new(store: &Store, title: &str) -> Result<()> {
         );
     }
     let content = format!("# {title}\n\n");
-    store.write(&name, &content)?;
+    store.create(&name, &content)?;
 
     println!("Created: {}", store.path_for(&name).display());
 
@@ -92,17 +92,27 @@ pub fn cmd_backup(store: &Store, output: Option<PathBuf>) -> Result<()> {
         }
     };
 
-    if let Some(parent) = out_path.parent() {
+    if out_path.symlink_metadata().is_ok() {
+        bail!(
+            "Backup destination '{}' already exists; choose a new filename",
+            out_path.display()
+        );
+    }
+    if let Some(parent) = out_path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)
             .with_context(|| format!("Cannot create backup directory '{}'", parent.display()))?;
     }
 
-    let file = File::create(&out_path)
+    let parent = out_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let file = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("Cannot create backup file '{}'", out_path.display()))?;
-    let mut zip = zip::ZipWriter::new(file);
+    let mut zip = zip::ZipWriter::new(file.as_file().try_clone()?);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    let skip = fs::canonicalize(&out_path).ok();
+    let skip = fs::canonicalize(file.path()).ok();
     let mut file_count = 0usize;
     zip_dir_recursive(
         &mut zip,
@@ -114,6 +124,13 @@ pub fn cmd_backup(store: &Store, output: Option<PathBuf>) -> Result<()> {
     )?;
     zip.finish()
         .with_context(|| format!("Failed to finalize backup '{}'", out_path.display()))?;
+    file.as_file().sync_all()?;
+    file.persist_noclobber(&out_path).with_context(|| {
+        format!(
+            "Cannot publish backup '{}'; choose a new filename",
+            out_path.display()
+        )
+    })?;
 
     println!(
         "Backup written: {} ({} files from {})",
@@ -140,6 +157,12 @@ fn zip_dir_recursive(
 
     for entry in entries {
         let path = entry.path();
+        if entry.file_type()?.is_symlink() {
+            bail!(
+                "Cannot back up symbolic link '{}'; store files inside the vault",
+                path.display()
+            );
+        }
         if let Some(skip) = skip
             && fs::canonicalize(&path).ok().as_deref() == Some(skip)
         {
@@ -178,29 +201,68 @@ pub fn cmd_restore(store: &Store, archive: &Path, force: bool) -> Result<()> {
     let mut zip = zip::ZipArchive::new(file)
         .with_context(|| format!("'{}' is not a valid zip archive", archive.display()))?;
 
-    let mut planned: Vec<(usize, PathBuf, String)> = Vec::new();
+    let mut planned: Vec<(tempfile::NamedTempFile, PathBuf, String)> = Vec::new();
+    let mut directories = Vec::new();
+    let mut paths = std::collections::HashSet::new();
     let mut conflicts: Vec<String> = Vec::new();
+    // Validate and decompress the entire archive before replacing any vault file.
+    let staging = tempfile::tempdir_in(&store.root)?;
+    let layout = staging.path().join("layout");
+    fs::create_dir(&layout)?;
 
     for i in 0..zip.len() {
-        let entry = zip
+        let mut entry = zip
             .by_index(i)
             .with_context(|| format!("Cannot read entry {i} from '{}'", archive.display()))?;
-        if entry.is_dir() {
-            continue;
-        }
         let name = entry
             .enclosed_name()
             .map(|p| p.to_path_buf())
             .with_context(|| format!("Refusing unsafe path in backup: '{}'", entry.name()))?;
         validate_restore_relpath(&name)?;
+        if !paths.insert(name.clone()) {
+            bail!("Duplicate path in backup: '{}'", name.display());
+        }
         let dest = store.root.join(&name);
         ensure_within_vault(&store.root, &dest)?;
+        // Test collisions on this volume, including case-insensitive APFS and
+        // Unicode filename aliases, before publishing any restored file.
+        let staged_path = layout.join(&name);
+        if entry.is_dir() {
+            if dest.exists() && !dest.is_dir() {
+                bail!("Restore directory conflicts with file '{}'", dest.display());
+            }
+            fs::create_dir_all(&staged_path).with_context(|| {
+                format!("Conflicting directory in backup: '{}'", name.display())
+            })?;
+            directories.push(dest);
+            continue;
+        }
+        if dest.is_dir() {
+            bail!("Restore file conflicts with directory '{}'", dest.display());
+        }
+        fs::create_dir_all(staged_path.parent().context("Backup entry has no parent")?)?;
+        File::options()
+            .write(true)
+            .create_new(true)
+            .open(&staged_path)
+            .with_context(|| format!("Conflicting file in backup: '{}'", name.display()))?;
 
         let label = name.to_string_lossy().replace('\\', "/");
         if dest.exists() && !force {
             conflicts.push(label);
         } else {
-            planned.push((i, dest, label));
+            let mut staged = tempfile::NamedTempFile::new_in(staging.path())?;
+            if dest.exists() {
+                let permissions = fs::metadata(&dest)?.permissions();
+                if permissions.readonly() {
+                    bail!("Cannot overwrite read-only file '{}'", dest.display());
+                }
+                staged.as_file().set_permissions(permissions)?;
+            }
+            io::copy(&mut entry, staged.as_file_mut())
+                .with_context(|| format!("Cannot extract '{label}'"))?;
+            staged.as_file().sync_all()?;
+            planned.push((staged, dest, label));
         }
     }
 
@@ -226,18 +288,23 @@ pub fn cmd_restore(store: &Store, archive: &Path, force: bool) -> Result<()> {
 
     let mut restored = 0usize;
     let mut overwritten = 0usize;
-    for (index, dest, label) in planned {
-        let mut entry = zip
-            .by_index(index)
-            .with_context(|| format!("Cannot read '{label}' from backup"))?;
+    for dir in directories {
+        ensure_within_vault(&store.root, &dir)?;
+        fs::create_dir_all(&dir)?;
+    }
+    for (staged, dest, label) in planned {
+        ensure_within_vault(&store.root, &dest)?;
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Cannot create '{}'", parent.display()))?;
         }
         let existed = dest.exists();
-        let mut out =
-            File::create(&dest).with_context(|| format!("Cannot write '{}'", dest.display()))?;
-        io::copy(&mut entry, &mut out).with_context(|| format!("Cannot extract '{label}'"))?;
+        if force {
+            staged.persist(&dest)
+        } else {
+            staged.persist_noclobber(&dest)
+        }
+        .with_context(|| format!("Cannot restore '{label}'"))?;
         restored += 1;
         if existed {
             overwritten += 1;
@@ -275,12 +342,21 @@ fn validate_restore_relpath(rel: &Path) -> Result<()> {
 }
 
 fn ensure_within_vault(root: &Path, dest: &Path) -> Result<()> {
-    let root = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let parent = dest.parent().unwrap_or(dest);
-    if parent.exists() {
-        let parent = fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
-        if !parent.starts_with(&root) {
-            bail!("Refusing to write outside vault: {}", dest.display());
+    let rel = dest.strip_prefix(root)?;
+    validate_restore_relpath(rel)?;
+    let mut path = root.to_path_buf();
+    for part in rel.components() {
+        path.push(part);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_symlink() => {
+                bail!(
+                    "Refusing to restore through symbolic link '{}'",
+                    path.display()
+                );
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(())
@@ -452,6 +528,152 @@ fn clone_store(store: &Store) -> Result<Store> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_archive(path: &Path, entries: &[(&str, &str)]) {
+        let mut zip = zip::ZipWriter::new(File::create(path).unwrap());
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for (name, contents) in entries {
+            if name.ends_with('/') {
+                zip.add_directory(*name, options).unwrap();
+            } else {
+                zip.start_file(*name, options).unwrap();
+                zip.write_all(contents.as_bytes()).unwrap();
+            }
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn backup_does_not_truncate_an_existing_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().to_path_buf()).unwrap();
+        let output = dir.path().join("note.md");
+        fs::write(&output, "valuable note").unwrap();
+        assert!(cmd_backup(&store, Some(output.clone())).is_err());
+        assert_eq!(fs::read_to_string(output).unwrap(), "valuable note");
+    }
+
+    #[test]
+    fn restore_corrupt_archive_preserves_all_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        store.write("first", "keep first").unwrap();
+        store.write("second", "keep second").unwrap();
+        let archive = dir.path().join("corrupt.zip");
+        test_archive(
+            &archive,
+            &[("first.md", "replacement"), ("second.md", "corrupt-me")],
+        );
+        let mut bytes = fs::read(&archive).unwrap();
+        let offset = bytes
+            .windows(10)
+            .position(|part| part == b"corrupt-me")
+            .unwrap();
+        bytes[offset] ^= 1;
+        fs::write(&archive, bytes).unwrap();
+        assert!(cmd_restore(&store, &archive, true).is_err());
+        assert_eq!(store.read("first").unwrap(), "keep first");
+        assert_eq!(store.read("second").unwrap(), "keep second");
+    }
+
+    #[test]
+    fn restore_preserves_empty_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        let archive = dir.path().join("folders.zip");
+        test_archive(&archive, &[("empty/nested/", "")]);
+        cmd_restore(&store, &archive, false).unwrap();
+        assert!(store.root.join("empty/nested").is_dir());
+    }
+
+    #[test]
+    fn restore_rejects_file_directory_overlap_before_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        let archive = dir.path().join("overlap.zip");
+        test_archive(
+            &archive,
+            &[("parent", "file"), ("parent/child.md", "child")],
+        );
+        assert!(cmd_restore(&store, &archive, true).is_err());
+        assert!(!store.root.join("parent").exists());
+    }
+
+    #[test]
+    fn restore_rejects_case_aliases_on_case_insensitive_volumes() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("CaseProbe"), "").unwrap();
+        if !dir.path().join("caseprobe").exists() {
+            return; // This filesystem treats the two paths as distinct files.
+        }
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        let archive = dir.path().join("aliases.zip");
+        for entries in [
+            [("Note.md", "first"), ("note.md", "second")],
+            [("Parent", "file"), ("parent/child.md", "child")],
+            [("parent/child.md", "child"), ("Parent", "file")],
+        ] {
+            test_archive(&archive, &entries);
+            assert!(cmd_restore(&store, &archive, true).is_err());
+            assert_eq!(fs::read_dir(&store.root).unwrap().count(), 0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_preserves_permissions_and_refuses_readonly_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        store.write("note", "original").unwrap();
+        let path = store.path_for("note");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        let archive = dir.path().join("permissions.zip");
+        test_archive(&archive, &[("note.md", "restored")]);
+        cmd_restore(&store, &archive, true).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        test_archive(&archive, &[("first.md", "new"), ("note.md", "replacement")]);
+        assert!(cmd_restore(&store, &archive, true).is_err());
+        assert!(!store.exists("first"));
+        assert_eq!(store.read("note").unwrap(), "restored");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_rejects_symlink_ancestors_and_leaf_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("private.md"), "private").unwrap();
+        std::os::unix::fs::symlink(&outside, store.root.join("link")).unwrap();
+        std::os::unix::fs::symlink(outside.join("private.md"), store.root.join("leaf.md")).unwrap();
+        for name in ["link/new/note.md", "leaf.md"] {
+            let archive = dir.path().join("symlink.zip");
+            test_archive(&archive, &[(name, "replacement")]);
+            assert!(cmd_restore(&store, &archive, true).is_err());
+        }
+        assert!(!outside.join("new").exists());
+        assert_eq!(
+            fs::read_to_string(outside.join("private.md")).unwrap(),
+            "private"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_rejects_symlink_loops_without_publishing_partial_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::with_root(dir.path().join("vault")).unwrap();
+        std::os::unix::fs::symlink(&store.root, store.root.join("loop")).unwrap();
+        let archive = dir.path().join("backup.zip");
+        assert!(cmd_backup(&store, Some(archive.clone())).is_err());
+        assert!(!archive.exists());
+    }
 
     #[test]
     fn backup_creates_zip_with_notes() {
