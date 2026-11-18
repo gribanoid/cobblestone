@@ -100,14 +100,8 @@ impl VaultApi for StoreVault {
         if store.exists(&new_id) {
             return Err(PluginError::msg(format!("File already exists: {new_path}")));
         }
-        let content = store
-            .read(&old_id)
-            .map_err(|e| PluginError::msg(e.to_string()))?;
         store
-            .create(&new_id, &content)
-            .map_err(|e| PluginError::msg(e.to_string()))?;
-        store
-            .delete(&old_id)
+            .move_note_to(&old_id, &new_id)
             .map_err(|e| PluginError::msg(e.to_string()))?;
         Ok(())
     }
@@ -613,5 +607,9 @@ mod tests {
         assert!(vault.rename("first.md", "second.md").is_err());
         assert_eq!(vault.read("first.md").unwrap(), "first");
         assert_eq!(vault.read("second.md").unwrap(), "second");
+
+        vault.rename("first.md", "folder/renamed.md").unwrap();
+        assert!(!vault.exists("first.md"));
+        assert_eq!(vault.read("folder/renamed.md").unwrap(), "first");
     }
 }

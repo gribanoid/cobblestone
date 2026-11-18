@@ -114,6 +114,21 @@ impl Store {
         if from_id == new_id {
             return Ok(new_id);
         }
+        self.move_note_to(&from_id, &new_id)?;
+        Ok(new_id)
+    }
+
+    /// Move or rename a note to an explicit id without changing its contents.
+    pub fn move_note_to(&self, from: &str, to: &str) -> Result<()> {
+        let from_id = resolve_note_id(from)?;
+        let new_id = resolve_note_id(to)?;
+        let from_path = self.note_file_path(&from_id)?;
+        if !from_path.is_file() {
+            bail!("Note '{from_id}' not found");
+        }
+        if from_id == new_id {
+            return Ok(());
+        }
         if self.exists(&new_id) {
             bail!("Note '{new_id}' already exists");
         }
@@ -124,8 +139,8 @@ impl Store {
                 .with_context(|| format!("Cannot create parent directory for '{new_id}'"))?;
         }
         move_file_noclobber(&from_path, &to_path)
-            .with_context(|| format!("Cannot move '{from_id}' to '{new_id}'"))?;
-        Ok(new_id)
+            .map_err(|error| anyhow::anyhow!("Cannot move '{from_id}' to '{new_id}': {error}"))?;
+        Ok(())
     }
 
     /// Move a folder into `dest_parent` (or vault root when `None`/empty).
@@ -187,12 +202,8 @@ impl Store {
             bail!("Note '{from_id}' not found");
         }
 
-        let content = fs::read_to_string(&from_path)
-            .with_context(|| format!("Cannot read note '{from_id}'"))?;
-        let new_content = set_content_title(&content, new_title);
-
         if from_id == new_id {
-            atomic_write(&from_path, new_content.as_bytes(), true)
+            update_file_title(&from_path, new_title)
                 .with_context(|| format!("Cannot write note '{from_id}'"))?;
             return Ok(new_id);
         }
@@ -206,9 +217,19 @@ impl Store {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Cannot create parent directory for '{new_id}'"))?;
         }
-        atomic_write(&to_path, new_content.as_bytes(), false)
-            .with_context(|| format!("Cannot write note '{new_id}'"))?;
-        fs::remove_file(&from_path).with_context(|| format!("Cannot remove note '{from_id}'"))?;
+        move_file_noclobber(&from_path, &to_path)
+            .map_err(|error| anyhow::anyhow!("Cannot rename '{from_id}' to '{new_id}': {error}"))?;
+        // Read after the atomic move so an edit made immediately before it is
+        // preserved. Copying then deleting the source can discard a newer save.
+        if let Err(error) = update_file_title(&to_path, new_title) {
+            if let Err(rollback) = move_file_noclobber(&to_path, &from_path) {
+                return Err(error.context(format!(
+                    "Note moved to '{new_id}', but its title could not be updated; \
+                     could not move it back to '{from_id}': {rollback}"
+                )));
+            }
+            return Err(error.context(format!("Cannot update title; note remains at '{from_id}'")));
+        }
         Ok(new_id)
     }
 
@@ -776,28 +797,65 @@ pub fn extract_wikilinks(content: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 fn move_file_noclobber(from: &Path, to: &Path) -> Result<()> {
-    match fs::hard_link(from, to) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(error.into());
+    match native_move_noclobber(from, to) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => {
+            Err(error).context("Cannot move notes between filesystems; copy the note instead")
         }
-        // Links may be unavailable on external drives or between mounted filesystems.
-        Err(_) => copy_file_noclobber(from, to)?,
+        Err(error) => Err(error).context("Cannot atomically move note without replacing a file"),
     }
-    fs::remove_file(from)?;
-    Ok(())
 }
 
-fn copy_file_noclobber(from: &Path, to: &Path) -> Result<()> {
-    let parent = to.parent().context("File has no parent directory")?;
-    let file = tempfile::NamedTempFile::new_in(parent)?;
-    fs::copy(from, file.path())?;
-    let modified = fs::metadata(from)?.modified()?;
-    file.as_file()
-        .set_times(fs::FileTimes::new().set_modified(modified))?;
-    file.as_file().sync_all()?;
-    file.persist_noclobber(to)?;
-    Ok(())
+#[cfg(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+))]
+fn native_move_noclobber(from: &Path, to: &Path) -> std::io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+    renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(Into::into)
+}
+
+#[cfg(windows)]
+fn native_move_noclobber(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+
+    let from: Vec<_> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<_> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    if from[..from.len() - 1].contains(&0) || to[..to.len() - 1].contains(&0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "File path contains a null character",
+        ));
+    }
+    // Both pointers remain valid, NUL-terminated UTF-16 for this call. No flags
+    // means neither replacing a destination nor copying across volumes.
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 0) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox",
+    windows
+)))]
+fn native_move_noclobber(_: &Path, _: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Atomic note moves are not supported on this platform",
+    ))
+}
+
+fn update_file_title(path: &Path, title: &str) -> Result<()> {
+    let content = fs::read_to_string(path)?;
+    atomic_write(path, set_content_title(&content, title).as_bytes(), true)
 }
 
 fn atomic_write(path: &Path, content: &[u8], overwrite: bool) -> Result<()> {
@@ -1623,24 +1681,79 @@ mod tests {
     }
 
     #[test]
-    fn no_clobber_move_and_copy_preserve_colliding_files() {
+    fn no_clobber_move_preserves_colliding_files_and_metadata() {
         let (dir, store) = temp_store();
         store.create("source", "original").unwrap();
         store.create("destination", "keep this").unwrap();
         let from = store.path_for("source");
         let to = store.path_for("destination");
         assert!(move_file_noclobber(&from, &to).is_err());
-        assert!(copy_file_noclobber(&from, &to).is_err());
         assert_eq!(store.read("source").unwrap(), "original");
         assert_eq!(store.read("destination").unwrap(), "keep this");
 
-        let copied = dir.path().join("copied.md");
-        copy_file_noclobber(&from, &copied).unwrap();
-        assert_eq!(fs::read_to_string(&copied).unwrap(), "original");
-        assert_eq!(
-            fs::metadata(&from).unwrap().modified().unwrap(),
-            fs::metadata(&copied).unwrap().modified().unwrap()
-        );
+        let modified = fs::metadata(&from).unwrap().modified().unwrap();
+        let moved = dir.path().join("moved.md");
+        move_file_noclobber(&from, &moved).unwrap();
+        assert!(!from.exists());
+        assert_eq!(fs::read_to_string(&moved).unwrap(), "original");
+        assert_eq!(modified, fs::metadata(&moved).unwrap().modified().unwrap());
+    }
+
+    #[test]
+    fn racing_moves_of_one_source_publish_only_one_destination() {
+        let (dir, store) = temp_store();
+        store.create("shared", "unique content").unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let attempts: Vec<_> = (0..8)
+            .map(|index| {
+                let root = dir.path().to_owned();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let store = Store::with_root(root).unwrap();
+                    let destination = format!("target-{index}");
+                    barrier.wait();
+                    store
+                        .move_note_to("shared", &destination)
+                        .ok()
+                        .map(|_| destination)
+                })
+            })
+            .collect();
+        let winners: Vec<_> = attempts
+            .into_iter()
+            .filter_map(|t| t.join().unwrap())
+            .collect();
+        assert_eq!(winners.len(), 1);
+        assert!(!store.exists("shared"));
+        assert_eq!(store.list_notes().unwrap().len(), 1);
+        assert_eq!(store.read(&winners[0]).unwrap(), "unique content");
+    }
+
+    #[test]
+    fn failed_title_update_rolls_back_the_note_move() {
+        let (_dir, store) = temp_store();
+        // Invalid UTF-8 cannot be rewritten as a Markdown title, but its bytes
+        // must remain at the original path when renaming reports failure.
+        fs::write(store.path_for("original"), [0xff, 0xfe]).unwrap();
+        assert!(store.rename_note("original", "renamed").is_err());
+        assert_eq!(fs::read(store.path_for("original")).unwrap(), [0xff, 0xfe]);
+        assert!(!store.exists("renamed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn readonly_note_title_failure_restores_original_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_dir, store) = temp_store();
+        store.create("original", "# Original\n\nKeep me").unwrap();
+        fs::set_permissions(
+            store.path_for("original"),
+            fs::Permissions::from_mode(0o444),
+        )
+        .unwrap();
+        assert!(store.rename_note("original", "renamed").is_err());
+        assert_eq!(store.read("original").unwrap(), "# Original\n\nKeep me");
+        assert!(!store.exists("renamed"));
     }
 
     #[test]

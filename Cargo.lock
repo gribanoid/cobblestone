@@ -689,9 +689,11 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "filetime",
+ "rustix 1.1.4",
  "serde",
  "tempfile",
  "toml",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
